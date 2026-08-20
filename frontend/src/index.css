@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-primary-50: #fafafa;
   --color-primary-100: #f4f4f5;
@@ -18,12 +20,22 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background-color: #fafafa;
   color: #09090b;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+html.dark body {
+  background-color: #09090b;
+  color: #f4f4f5;
 }
 
 /* Monochrome Pattern & Utilities */
 .bg-grid-pattern {
   background-image: radial-gradient(rgba(0, 0, 0, 0.08) 1px, transparent 1px);
   background-size: 24px 24px;
+}
+
+html.dark .bg-grid-pattern {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);
 }
 
 .glass-panel {
@@ -34,8 +46,22 @@ body {
   box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.07);
 }
 
+html.dark .glass-panel {
+  background: rgba(18, 18, 20, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+}
+
 .gradient-text {
   background: linear-gradient(135deg, #000000 0%, #52525b 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+html.dark .gradient-text {
+  background: linear-gradient(135deg, #ffffff 0%, #a1a1aa 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
