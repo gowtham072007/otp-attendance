@@ -82,6 +82,8 @@ const AdminDashboard = () => {
   const [todaySession, setTodaySession] = useState(null);
   const [todayCompleted, setTodayCompleted] = useState(false);
 
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   // Whitelist state
   const [allowedEmails, setAllowedEmails] = useState([]);
   const [newEmail, setNewEmail] = useState('');
@@ -289,12 +291,41 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleDeleteAllAttendance = async () => {
+    const confirmed = window.confirm(
+      "⚠️ Are you sure you want to permanently DELETE ALL attendance records and sessions?\n\nThis will clear all past attendance history and allow a new session to be started. This action cannot be undone."
+    );
+    if (!confirmed) return;
+
+    setDeleteLoading(true);
+    try {
+      const res = await api.delete('/admin/attendance/all');
+      alert(res.data.message || "All attendance records deleted successfully.");
+      setSession(null);
+      setOtp(null);
+      setTodayCompleted(false);
+      setTodaySession(null);
+      setSessionEndedMessage(null);
+      setSelectedSessionId(null);
+      await Promise.all([
+        fetchCurrentSession(),
+        fetchAttendance(),
+        fetchAllSessions()
+      ]);
+    } catch (err) {
+      alert("Failed to delete attendance records: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   const handleSelectSession = (e) => {
     const val = e.target.value;
     const id = val ? parseInt(val, 10) : null;
     setSelectedSessionId(id);
     fetchAttendance(id);
   };
+
 
   const handleCopyAbsentEmails = () => {
     const absentList = attendanceReport.absent_list || [];
@@ -894,6 +925,16 @@ const AdminDashboard = () => {
                     >
                       <Download size={14} />
                       <span>Export CSV (IST)</span>
+                    </button>
+
+                    <button 
+                      onClick={handleDeleteAllAttendance}
+                      disabled={deleteLoading || (attendanceReport.records && attendanceReport.records.length === 0)}
+                      className="flex items-center space-x-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/80 px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Permanently delete all attendance records and sessions"
+                    >
+                      <Trash2 size={14} />
+                      <span>{deleteLoading ? 'Deleting...' : 'Delete All Records'}</span>
                     </button>
                   </div>
                 </div>

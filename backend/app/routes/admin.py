@@ -329,9 +329,27 @@ def export_attendance(session_id: Optional[int] = None, db: Session = Depends(ge
         headers={"Content-Disposition": f"attachment; filename=attendance_{session_num}_{current_ist}.csv"}
     )
 
+@router.delete("/attendance/all")
+def delete_all_attendance(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    db.query(AttendanceRecord).delete()
+    db.query(OTP).delete()
+    db.query(AttendanceSession).delete()
+    db.commit()
+    return {"message": "All attendance records and sessions have been permanently deleted."}
+
+@router.delete("/session/{session_id}")
+def delete_session(session_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    session_obj = db.query(AttendanceSession).filter(AttendanceSession.id == session_id).first()
+    if not session_obj:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    db.query(AttendanceRecord).filter(AttendanceRecord.session_id == session_id).delete()
+    db.query(OTP).filter(OTP.session_id == session_id).delete()
+    db.delete(session_obj)
+    db.commit()
+    return {"message": f"Session #{session_id} and its attendance records have been deleted."}
 
 
-# --- Allowed Email Whitelist Management ---
 
 @router.get("/allowed-emails", response_model=List[AllowedEmailResponse])
 def get_allowed_emails(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
