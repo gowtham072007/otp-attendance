@@ -53,3 +53,12 @@ class AttendanceRecord(Base):
     __table_args__ = (
         UniqueConstraint('session_id', 'user_id', name='_session_user_uc'),
     )
+
+class AllowedEmail(Base):
+    __tablename__ = "allowed_emails"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+

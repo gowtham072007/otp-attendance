@@ -51,3 +51,20 @@ class AttendanceRecordResponse(BaseModel):
 
 class AttendanceSubmission(BaseModel):
     otp_code: str
+
+class AllowedEmailCreate(BaseModel):
+    email: str
+    name: Optional[str] = None
+
+class AllowedEmailBulkCreate(BaseModel):
+    emails: List[str]
+
+class AllowedEmailResponse(BaseModel):
+    id: int
+    email: str
+    name: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
