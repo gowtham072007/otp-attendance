@@ -319,12 +319,46 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleDeleteSingleRecord = async (recordId, studentName) => {
+    if (!recordId) return;
+    if (!window.confirm(`Are you sure you want to delete the attendance record for '${studentName}'?`)) {
+      return;
+    }
+    try {
+      await api.delete(`/admin/attendance/record/${recordId}`);
+      await fetchAttendance(selectedSessionId);
+      await fetchCurrentSession();
+    } catch (err) {
+      alert("Failed to delete record: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleDeleteSelectedSession = async () => {
+    const targetId = selectedSessionId || (attendanceReport.session && attendanceReport.session.id);
+    if (!targetId) return;
+    if (!window.confirm(`⚠️ Are you sure you want to delete Session #${targetId} and all its attendance records?`)) {
+      return;
+    }
+    try {
+      await api.delete(`/admin/session/${targetId}`);
+      setSelectedSessionId(null);
+      await Promise.all([
+        fetchCurrentSession(),
+        fetchAttendance(),
+        fetchAllSessions()
+      ]);
+    } catch (err) {
+      alert("Failed to delete session: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
   const handleSelectSession = (e) => {
     const val = e.target.value;
     const id = val ? parseInt(val, 10) : null;
     setSelectedSessionId(id);
     fetchAttendance(id);
   };
+
 
 
   const handleCopyAbsentEmails = () => {
@@ -631,7 +665,17 @@ const AdminDashboard = () => {
                               <Check size={10} className="stroke-[3]" />
                               <span>Present</span>
                             </span>
+                            {student.record_id && (
+                              <button
+                                onClick={() => handleDeleteSingleRecord(student.record_id, student.name)}
+                                title="Delete attendance for this student"
+                                className="p-1.5 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
                           </div>
+
                         </div>
                       ))
                     ) : (
@@ -749,8 +793,18 @@ const AdminDashboard = () => {
                         <Calendar size={16} />
                         <span>Completed For Today</span>
                       </button>
+
+                      <button 
+                        onClick={handleDeleteAllAttendance}
+                        className="w-full flex items-center justify-center space-x-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 px-4 py-2.5 rounded-xl font-bold text-xs font-mono uppercase tracking-wider transition shadow-xs mt-3"
+                        title="Clear today's attendance records to restart a new session"
+                      >
+                        <Trash2 size={14} />
+                        <span>Reset & Clear Attendance</span>
+                      </button>
                     </div>
                   )}
+
 
                   {/* CASE 2: No active session & no session conducted yet today */}
                   {!session && !todayCompleted && (
@@ -919,6 +973,17 @@ const AdminDashboard = () => {
                       </select>
                     )}
 
+                    {selectedSessionId && (
+                      <button 
+                        onClick={handleDeleteSelectedSession}
+                        className="flex items-center space-x-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/80 px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider"
+                        title={`Delete Session #${selectedSessionId}`}
+                      >
+                        <Trash2 size={14} />
+                        <span>Delete Session #{selectedSessionId}</span>
+                      </button>
+                    )}
+
                     <button 
                       onClick={handleExport} 
                       className="flex items-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white px-4 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider"
@@ -930,7 +995,7 @@ const AdminDashboard = () => {
                     <button 
                       onClick={handleDeleteAllAttendance}
                       disabled={deleteLoading}
-                      className="flex items-center space-x-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/80 px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider disabled:opacity-50"
+                      className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white px-4 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider disabled:opacity-50"
                       title="Permanently delete all attendance records and sessions"
                     >
                       <Trash2 size={14} />
@@ -999,13 +1064,14 @@ const AdminDashboard = () => {
                         <th className="p-4">Date (IST)</th>
                         <th className="p-4">Time (IST)</th>
                         <th className="p-4">Session</th>
-                        <th className="p-4 text-right pr-6">Status</th>
+                        <th className="p-4">Status</th>
+                        <th className="p-4 text-right pr-6">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 text-sm">
                       {filteredAttendanceRecords.length === 0 ? (
                         <tr>
-                          <td colSpan="5" className="p-12 text-center text-zinc-400 dark:text-zinc-600 font-mono text-xs">
+                          <td colSpan="6" className="p-12 text-center text-zinc-400 dark:text-zinc-600 font-mono text-xs">
                             {attendanceSearch 
                               ? "No students match your search." 
                               : "No attendance records found for this session."}
@@ -1030,7 +1096,7 @@ const AdminDashboard = () => {
                             <td className="p-4 text-xs">
                               <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 px-2 py-0.5 rounded font-mono font-medium">{record.session}</span>
                             </td>
-                            <td className="p-4 text-right pr-6">
+                            <td className="p-4">
                               {record.status === 'Present' ? (
                                 <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-[11px] font-mono font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
                                   <Check size={12} className="stroke-[3]" />
@@ -1043,12 +1109,26 @@ const AdminDashboard = () => {
                                 </span>
                               )}
                             </td>
+                            <td className="p-4 text-right pr-6">
+                              {record.status === 'Present' && record.record_id ? (
+                                <button
+                                  onClick={() => handleDeleteSingleRecord(record.record_id, record.name)}
+                                  title="Delete this student's attendance record"
+                                  className="p-2 rounded-xl text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              ) : (
+                                <span className="text-zinc-300 dark:text-zinc-700 text-xs font-mono pr-2">—</span>
+                              )}
+                            </td>
                           </tr>
                         ))
                       )}
                     </tbody>
                   </table>
                 </div>
+
 
               </div>
             </div>

@@ -133,6 +133,9 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
         if att_record:
             present_count += 1
             item = {
+                "record_id": att_record.id,
+                "user_id": user_id,
+                "session_id": target_session.id,
                 "name": student["name"],
                 "email": student["email"],
                 "date": format_ist_date(att_record.timestamp),
@@ -145,6 +148,9 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
         else:
             absent_count += 1
             item = {
+                "record_id": None,
+                "user_id": user_id,
+                "session_id": target_session.id,
                 "name": student["name"],
                 "email": student["email"],
                 "date": format_ist_date(target_session.created_at),
@@ -154,6 +160,7 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
             }
             records.append(item)
             absent_list.append(item)
+
             
     total = len(roster)
     rate = f"{round((present_count / total) * 100)}%" if total > 0 else "0%"
@@ -343,11 +350,21 @@ def delete_session(session_id: int, db: Session = Depends(get_db), admin: User =
     if not session_obj:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    db.query(AttendanceRecord).filter(AttendanceRecord.session_id == session_id).delete()
-    db.query(OTP).filter(OTP.session_id == session_id).delete()
     db.delete(session_obj)
     db.commit()
     return {"message": f"Session #{session_id} and its attendance records have been deleted."}
+
+@router.delete("/attendance/record/{record_id}")
+def delete_single_attendance_record(record_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    record = db.query(AttendanceRecord).filter(AttendanceRecord.id == record_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Attendance record not found")
+    
+    db.delete(record)
+    db.commit()
+    return {"message": "Attendance record deleted successfully"}
+
+
 
 
 
