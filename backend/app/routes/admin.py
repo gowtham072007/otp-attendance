@@ -21,6 +21,29 @@ from ..auth.utils import get_current_admin
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+# --- Indian Standard Time (IST) Helpers ---
+
+IST = timezone(timedelta(hours=5, minutes=30), name="IST")
+
+def to_ist(dt: Optional[datetime]) -> Optional[datetime]:
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc).astimezone(IST)
+    return dt.astimezone(IST)
+
+def format_ist_date(dt: Optional[datetime]) -> str:
+    ist_dt = to_ist(dt)
+    return ist_dt.strftime("%d-%m-%Y") if ist_dt else "—"
+
+def format_ist_time(dt: Optional[datetime]) -> str:
+    ist_dt = to_ist(dt)
+    return ist_dt.strftime("%I:%M:%S %p") if ist_dt else "—"
+
+def format_ist_time_short(dt: Optional[datetime]) -> str:
+    ist_dt = to_ist(dt)
+    return ist_dt.strftime("%I:%M %p") if ist_dt else "—"
+
 # --- Helper to calculate Present and Absent students for a session ---
 
 def compute_session_attendance(db: Session, session_id: Optional[int] = None):
@@ -36,7 +59,9 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
         return {
             "session": None,
             "summary": {"total": 0, "present": 0, "absent": 0, "rate": "0%"},
-            "records": []
+            "records": [],
+            "present_list": [],
+            "absent_list": []
         }
         
     # Get attendance records for this session
@@ -84,6 +109,8 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
                 }
 
     records = []
+    present_list = []
+    absent_list = []
     present_count = 0
     absent_count = 0
     
@@ -95,36 +122,44 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
         
         if att_record:
             present_count += 1
-            records.append({
+            item = {
                 "name": student["name"],
                 "email": student["email"],
-                "date": att_record.timestamp.strftime("%Y-%m-%d"),
-                "time": att_record.timestamp.strftime("%H:%M:%S"),
+                "date": format_ist_date(att_record.timestamp),
+                "time": format_ist_time(att_record.timestamp),
                 "session": f"Session {target_session.id:02d}",
                 "status": "Present"
-            })
+            }
+            records.append(item)
+            present_list.append(item)
         else:
             absent_count += 1
-            records.append({
+            item = {
                 "name": student["name"],
                 "email": student["email"],
-                "date": target_session.created_at.strftime("%Y-%m-%d"),
+                "date": format_ist_date(target_session.created_at),
                 "time": "—",
                 "session": f"Session {target_session.id:02d}",
                 "status": "Absent"
-            })
+            }
+            records.append(item)
+            absent_list.append(item)
             
     total = len(roster)
     rate = f"{round((present_count / total) * 100)}%" if total > 0 else "0%"
     
     # Sort: Present first, then alphabetical by name
     records.sort(key=lambda x: (0 if x["status"] == "Present" else 1, x["name"].lower()))
+    present_list.sort(key=lambda x: x["name"].lower())
+    absent_list.sort(key=lambda x: x["name"].lower())
     
     return {
         "session": {
             "id": target_session.id,
             "status": target_session.status,
-            "created_at": target_session.created_at
+            "created_at": to_ist(target_session.created_at).isoformat() if target_session.created_at else None,
+            "formatted_date": format_ist_date(target_session.created_at),
+            "formatted_time": format_ist_time(target_session.created_at)
         },
         "summary": {
             "total": total,
@@ -132,7 +167,9 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
             "absent": absent_count,
             "rate": rate
         },
-        "records": records
+        "records": records,
+        "present_list": present_list,
+        "absent_list": absent_list
     }
 
 # --- Session & OTP Endpoints ---
@@ -146,7 +183,9 @@ def get_all_sessions(db: Session = Depends(get_db), admin: User = Depends(get_cu
         result.append({
             "id": s.id,
             "status": s.status,
-            "created_at": s.created_at,
+            "created_at": to_ist(s.created_at).isoformat() if s.created_at else None,
+            "formatted_date": format_ist_date(s.created_at),
+            "formatted_time": format_ist_time_short(s.created_at),
             "present_count": count
         })
     return result
@@ -200,7 +239,7 @@ def end_session(db: Session = Depends(get_db), admin: User = Depends(get_current
         
     db.commit()
     
-    # Compute report for the ended session
+    # Compute report for the ended session (includes present_list and absent_list)
     report = compute_session_attendance(db, active_session.id)
     
     return {
@@ -243,7 +282,7 @@ def export_attendance(session_id: Optional[int] = None, db: Session = Depends(ge
     
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Student Name", "Email", "Date", "Time", "Session", "Status"])
+    writer.writerow(["Student Name", "Email", "Date (IST)", "Time (IST)", "Session", "Attendance Status"])
     
     for r in records:
         writer.writerow([
@@ -256,11 +295,13 @@ def export_attendance(session_id: Optional[int] = None, db: Session = Depends(ge
         ])
     
     output.seek(0)
+    current_ist = datetime.now(IST).strftime('%d-%m-%Y_%I-%M%p')
     return StreamingResponse(
         iter([output.getvalue()]), 
         media_type="text/csv", 
-        headers={"Content-Disposition": f"attachment; filename=attendance_{session_num}_{datetime.now().strftime('%Y-%m-%d')}.csv"}
+        headers={"Content-Disposition": f"attachment; filename=attendance_{session_num}_{current_ist}.csv"}
     )
+
 
 
 # --- Allowed Email Whitelist Management ---

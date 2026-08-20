@@ -20,9 +20,10 @@ import {
   AlertCircle,
   XCircle,
   UserCheck,
-  UserX
+  UserX,
+  Copy,
+  Calendar
 } from 'lucide-react';
-import { format } from 'date-fns';
 import ThemeToggle from '../components/ThemeToggle';
 
 const parseExpiryTime = (dateStr) => {
@@ -34,6 +35,26 @@ const parseExpiryTime = (dateStr) => {
   return new Date(dateStr + 'Z').getTime();
 };
 
+const formatISTDateTime = (dateStr) => {
+  if (!dateStr) return '—';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const strHours = String(hours).padStart(2, '0');
+    return `${day}-${month}-${year}, ${strHours}:${minutes} ${ampm} IST`;
+  } catch {
+    return dateStr;
+  }
+};
+
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('session'); // 'session' | 'whitelist'
@@ -41,18 +62,22 @@ const AdminDashboard = () => {
   const [otp, setOtp] = useState(null);
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [currentISTTime, setCurrentISTTime] = useState('');
 
   // Attendance & Sessions state
   const [attendanceReport, setAttendanceReport] = useState({
     session: null,
     summary: { total: 0, present: 0, absent: 0, rate: '0%' },
-    records: []
+    records: [],
+    present_list: [],
+    absent_list: []
   });
   const [allSessions, setAllSessions] = useState([]);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [attendanceFilter, setAttendanceFilter] = useState('ALL'); // 'ALL' | 'PRESENT' | 'ABSENT'
   const [attendanceSearch, setAttendanceSearch] = useState('');
   const [sessionEndedMessage, setSessionEndedMessage] = useState(null);
+  const [copiedAbsent, setCopiedAbsent] = useState(false);
 
   // Whitelist state
   const [allowedEmails, setAllowedEmails] = useState([]);
@@ -64,6 +89,32 @@ const AdminDashboard = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [whitelistSuccess, setWhitelistSuccess] = useState('');
   const [whitelistError, setWhitelistError] = useState('');
+
+  // Live IST Clock
+  useEffect(() => {
+    const updateClock = () => {
+      const now = new Date();
+      const options = {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      };
+      try {
+        const formatter = new Intl.DateTimeFormat('en-GB', options);
+        setCurrentISTTime(formatter.format(now).replace(',', '') + ' IST');
+      } catch {
+        setCurrentISTTime(now.toLocaleTimeString() + ' IST');
+      }
+    };
+    updateClock();
+    const clockTimer = setInterval(updateClock, 1000);
+    return () => clearInterval(clockTimer);
+  }, []);
 
   const fetchCurrentSession = async () => {
     try {
@@ -150,6 +201,7 @@ const AdminDashboard = () => {
       const res = await api.post('/admin/session/start');
       setSession(res.data.id);
       setSelectedSessionId(res.data.id);
+      setAttendanceFilter('ALL');
       await fetchCurrentSession();
       await fetchAttendance(res.data.id);
       await fetchAllSessions();
@@ -173,7 +225,9 @@ const AdminDashboard = () => {
           present: res.data.report.summary.present,
           absent: res.data.report.summary.absent,
           total: res.data.report.summary.total,
-          rate: res.data.report.summary.rate
+          rate: res.data.report.summary.rate,
+          absent_list: res.data.report.absent_list || [],
+          present_list: res.data.report.present_list || []
         });
       }
       await fetchAllSessions();
@@ -213,7 +267,8 @@ const AdminDashboard = () => {
       const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.setAttribute('download', `attendance_report_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+      const sessionLabel = selectedSessionId ? `Session_${selectedSessionId}` : 'Attendance';
+      link.setAttribute('download', `attendance_${sessionLabel}_IST.csv`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -227,6 +282,15 @@ const AdminDashboard = () => {
     const id = val ? parseInt(val, 10) : null;
     setSelectedSessionId(id);
     fetchAttendance(id);
+  };
+
+  const handleCopyAbsentEmails = () => {
+    const absentList = attendanceReport.absent_list || [];
+    if (absentList.length === 0) return;
+    const emails = absentList.map(s => s.email).join(', ');
+    navigator.clipboard.writeText(emails);
+    setCopiedAbsent(true);
+    setTimeout(() => setCopiedAbsent(false), 3000);
   };
 
   // Whitelist Actions
@@ -318,11 +382,9 @@ const AdminDashboard = () => {
 
   // Filtered Attendance Records (Present / Absent)
   const filteredAttendanceRecords = attendanceReport.records.filter((rec) => {
-    // Status filter
     if (attendanceFilter === 'PRESENT' && rec.status !== 'Present') return false;
     if (attendanceFilter === 'ABSENT' && rec.status !== 'Absent') return false;
     
-    // Search query
     if (attendanceSearch.trim()) {
       const q = attendanceSearch.toLowerCase();
       return rec.name.toLowerCase().includes(q) || rec.email.toLowerCase().includes(q);
@@ -353,6 +415,12 @@ const AdminDashboard = () => {
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">{user.email}</p>
           </div>
+        </div>
+
+        {/* Live IST Clock Header */}
+        <div className="hidden lg:flex items-center space-x-2 bg-zinc-100 dark:bg-zinc-900 px-3.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-700 dark:text-zinc-300">
+          <Clock size={14} className="text-zinc-500" />
+          <span className="font-bold">{currentISTTime}</span>
         </div>
 
         {/* Tab Controls in Header */}
@@ -437,9 +505,9 @@ const AdminDashboard = () => {
                     <CheckCircle size={28} />
                   </div>
                   <div>
-                    <h3 className="text-lg font-black tracking-tight">Session #{sessionEndedMessage.id} Concluded</h3>
+                    <h3 className="text-lg font-black tracking-tight">Session #{sessionEndedMessage.id} Ended (IST)</h3>
                     <p className="text-xs text-zinc-400 mt-0.5">
-                      Session closed. Present and Absent student records have been generated.
+                      Session closed. Check the Absent and Present breakdowns below.
                     </p>
                   </div>
                 </div>
@@ -455,9 +523,73 @@ const AdminDashboard = () => {
                   </div>
                   <div className="h-8 w-px bg-zinc-700"></div>
                   <div className="text-center">
-                    <p className="text-[10px] font-mono uppercase text-zinc-400 font-bold">Attendance Rate</p>
+                    <p className="text-[10px] font-mono uppercase text-zinc-400 font-bold">Rate</p>
                     <p className="text-xl font-mono font-black text-white">{sessionEndedMessage.rate}</p>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Dedicated Absent List Card (Displayed especially after session ends or when there are absent students) */}
+            {attendanceReport.absent_list && attendanceReport.absent_list.length > 0 && (
+              <div className="bg-rose-50/60 dark:bg-rose-950/20 border-2 border-rose-200 dark:border-rose-900/60 rounded-3xl p-6 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2.5 bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300 rounded-xl border border-rose-300 dark:border-rose-800">
+                      <UserX size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <h3 className="text-base font-black text-rose-950 dark:text-rose-200 tracking-tight">
+                          Absent Students List
+                        </h3>
+                        <span className="bg-rose-200 dark:bg-rose-900/80 text-rose-800 dark:text-rose-200 text-xs font-mono font-bold px-2.5 py-0.5 rounded-full">
+                          {attendanceReport.absent_list.length} Students Absent
+                        </span>
+                      </div>
+                      <p className="text-xs text-rose-700/80 dark:text-rose-400 mt-0.5">
+                        Students who were authorized but did not check in during {attendanceReport.session ? `Session #${attendanceReport.session.id}` : 'this session'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={handleCopyAbsentEmails}
+                      className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition shadow-xs"
+                    >
+                      {copiedAbsent ? <Check size={14} /> : <Copy size={14} />}
+                      <span>{copiedAbsent ? 'Emails Copied!' : 'Copy Absent Emails'}</span>
+                    </button>
+                    <button
+                      onClick={() => setAttendanceFilter('ABSENT')}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold font-mono transition border ${
+                        attendanceFilter === 'ABSENT'
+                          ? 'bg-rose-900 text-white border-transparent'
+                          : 'bg-white dark:bg-zinc-900 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                      }`}
+                    >
+                      Filter Table to Absent
+                    </button>
+                  </div>
+                </div>
+
+                {/* Absent Student Chips/List */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {attendanceReport.absent_list.map((student, idx) => (
+                    <div 
+                      key={idx}
+                      className="bg-white dark:bg-zinc-900/90 border border-rose-200 dark:border-rose-900/60 p-3.5 rounded-2xl flex items-center justify-between shadow-xs"
+                    >
+                      <div className="overflow-hidden mr-2">
+                        <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">{student.name}</p>
+                        <p className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 truncate">{student.email}</p>
+                      </div>
+                      <span className="shrink-0 px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 text-[10px] font-mono font-bold uppercase">
+                        Absent
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -533,7 +665,7 @@ const AdminDashboard = () => {
                         className="w-full flex items-center justify-center space-x-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 px-6 py-3.5 rounded-xl transition-all font-bold text-sm shadow-xs"
                       >
                         <Square size={16} />
-                        <span>End Session & View Breakdown</span>
+                        <span>End Session & View Absent List</span>
                       </button>
                     </div>
                   )}
@@ -542,7 +674,12 @@ const AdminDashboard = () => {
                 {/* Stats Summary Cards (Present, Absent, Total) */}
                 <div className="grid grid-cols-2 gap-4">
                   {/* Present Card */}
-                  <div className="bg-white dark:bg-zinc-900/90 p-5 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 flex flex-col items-center text-center">
+                  <div 
+                    onClick={() => setAttendanceFilter('PRESENT')}
+                    className={`bg-white dark:bg-zinc-900/90 p-5 rounded-2xl shadow-sm border transition cursor-pointer ${
+                      attendanceFilter === 'PRESENT' ? 'ring-2 ring-emerald-500 border-emerald-500' : 'border-zinc-200 dark:border-zinc-800'
+                    } flex flex-col items-center text-center`}
+                  >
                     <div className="bg-emerald-50 dark:bg-emerald-950/60 p-2.5 rounded-xl text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 mb-2.5">
                       <UserCheck size={20} />
                     </div>
@@ -553,7 +690,12 @@ const AdminDashboard = () => {
                   </div>
 
                   {/* Absent Card */}
-                  <div className="bg-white dark:bg-zinc-900/90 p-5 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 flex flex-col items-center text-center">
+                  <div 
+                    onClick={() => setAttendanceFilter('ABSENT')}
+                    className={`bg-white dark:bg-zinc-900/90 p-5 rounded-2xl shadow-sm border transition cursor-pointer ${
+                      attendanceFilter === 'ABSENT' ? 'ring-2 ring-rose-500 border-rose-500' : 'border-zinc-200 dark:border-zinc-800'
+                    } flex flex-col items-center text-center`}
+                  >
                     <div className="bg-rose-50 dark:bg-rose-950/60 p-2.5 rounded-xl text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 mb-2.5">
                       <UserX size={20} />
                     </div>
@@ -587,7 +729,7 @@ const AdminDashboard = () => {
                 <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-50/50 dark:bg-zinc-900/50">
                   <div>
                     <div className="flex items-center space-x-2">
-                      <h2 className="text-base font-black uppercase tracking-wider text-black dark:text-white">Attendance Records</h2>
+                      <h2 className="text-base font-black uppercase tracking-wider text-black dark:text-white">Attendance Records (IST)</h2>
                       {attendanceReport.session && (
                         <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
                           attendanceReport.session.status === 'ACTIVE' 
@@ -599,7 +741,7 @@ const AdminDashboard = () => {
                       )}
                     </div>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                      Showing verified Present and Absent participants
+                      Indian Standard Time (IST) • Present & Absent participants
                     </p>
                   </div>
 
@@ -625,7 +767,7 @@ const AdminDashboard = () => {
                       className="flex items-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white px-4 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider"
                     >
                       <Download size={14} />
-                      <span>Export CSV</span>
+                      <span>Export CSV (IST)</span>
                     </button>
                   </div>
                 </div>
@@ -687,8 +829,8 @@ const AdminDashboard = () => {
                     <thead className="sticky top-0 z-10">
                       <tr className="bg-zinc-100/90 dark:bg-zinc-950/90 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-mono uppercase tracking-wider text-zinc-600 dark:text-zinc-400 font-bold">
                         <th className="p-4 pl-6">Student</th>
-                        <th className="p-4">Date</th>
-                        <th className="p-4">Time Marked</th>
+                        <th className="p-4">Date (IST)</th>
+                        <th className="p-4">Time (IST)</th>
                         <th className="p-4">Session</th>
                         <th className="p-4 text-right pr-6">Status</th>
                       </tr>
@@ -707,7 +849,7 @@ const AdminDashboard = () => {
                           <tr 
                             key={index} 
                             className={`hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors ${
-                              record.status === 'Absent' ? 'opacity-85' : ''
+                              record.status === 'Absent' ? 'bg-rose-50/20 dark:bg-rose-950/10' : ''
                             }`}
                           >
                             <td className="p-4 pl-6">
@@ -891,7 +1033,7 @@ const AdminDashboard = () => {
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-zinc-100/90 dark:bg-zinc-950/90 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-mono uppercase tracking-wider text-zinc-600 dark:text-zinc-400 font-bold">
                       <th className="p-4 pl-6">Allowed Email & Student</th>
-                      <th className="p-4">Added On</th>
+                      <th className="p-4">Added On (IST)</th>
                       <th className="p-4">Status</th>
                       <th className="p-4 text-right pr-6">Action</th>
                     </tr>
@@ -913,7 +1055,7 @@ const AdminDashboard = () => {
                             )}
                           </td>
                           <td className="p-4 text-xs text-zinc-600 dark:text-zinc-400 font-mono">
-                            {item.created_at ? format(new Date(item.created_at), 'yyyy-MM-dd HH:mm') : '—'}
+                            {formatISTDateTime(item.created_at)}
                           </td>
                           <td className="p-4">
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">

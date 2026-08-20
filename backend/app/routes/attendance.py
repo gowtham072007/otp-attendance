@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from typing import Optional
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -8,6 +9,24 @@ from ..schemas import AttendanceSubmission
 from ..auth.utils import get_current_user
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
+
+# --- Indian Standard Time (IST) Helpers ---
+IST = timezone(timedelta(hours=5, minutes=30), name="IST")
+
+def to_ist(dt: Optional[datetime]) -> Optional[datetime]:
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc).astimezone(IST)
+    return dt.astimezone(IST)
+
+def format_ist_date(dt: Optional[datetime]) -> str:
+    ist_dt = to_ist(dt)
+    return ist_dt.strftime("%d-%m-%Y") if ist_dt else "—"
+
+def format_ist_time(dt: Optional[datetime]) -> str:
+    ist_dt = to_ist(dt)
+    return ist_dt.strftime("%I:%M %p") if ist_dt else "—"
 
 @router.post("/mark")
 def mark_attendance(submission: AttendanceSubmission, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -45,6 +64,7 @@ def mark_attendance(submission: AttendanceSubmission, db: Session = Depends(get_
         )
         db.add(new_attendance)
         db.commit()
+        db.refresh(new_attendance)
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Attendance Already Marked. You cannot mark attendance again for this session.")
@@ -53,8 +73,8 @@ def mark_attendance(submission: AttendanceSubmission, db: Session = Depends(get_
         "message": "Attendance Marked Successfully!",
         "name": current_user.full_name,
         "email": current_user.email,
-        "date": new_attendance.timestamp.strftime("%d-%m-%Y"),
-        "time": new_attendance.timestamp.strftime("%I:%M %p"),
+        "date": format_ist_date(new_attendance.timestamp),
+        "time": format_ist_time(new_attendance.timestamp),
         "status": new_attendance.status
     }
 
@@ -65,9 +85,10 @@ def get_my_history(db: Session = Depends(get_db), current_user: User = Depends(g
     result = []
     for r in records:
         result.append({
-            "date": r.timestamp.strftime("%d-%m-%Y"),
+            "date": format_ist_date(r.timestamp),
             "session": f"Session {r.session_id:02d}",
-            "time": r.timestamp.strftime("%I:%M %p"),
+            "time": format_ist_time(r.timestamp),
             "status": r.status
         })
     return result
+
