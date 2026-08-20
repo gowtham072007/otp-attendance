@@ -28,6 +28,52 @@ def format_ist_time(dt: Optional[datetime]) -> str:
     ist_dt = to_ist(dt)
     return ist_dt.strftime("%I:%M %p") if ist_dt else "—"
 
+def get_today_session(db: Session) -> Optional[AttendanceSession]:
+    now_ist = datetime.now(IST)
+    start_of_day_ist = datetime(now_ist.year, now_ist.month, now_ist.day, 0, 0, 0, tzinfo=IST)
+    end_of_day_ist = datetime(now_ist.year, now_ist.month, now_ist.day, 23, 59, 59, tzinfo=IST)
+    start_utc = start_of_day_ist.astimezone(timezone.utc).replace(tzinfo=None)
+    end_utc = end_of_day_ist.astimezone(timezone.utc).replace(tzinfo=None)
+    return db.query(AttendanceSession).filter(
+        AttendanceSession.created_at >= start_utc,
+        AttendanceSession.created_at <= end_utc
+    ).order_by(AttendanceSession.created_at.desc()).first()
+
+@router.get("/session/status")
+def get_session_status(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
+    today_session = get_today_session(db)
+    
+    # Check if student marked attendance for active or today's session
+    my_record = None
+    target_session = active_session or today_session
+    if target_session:
+        my_record = db.query(AttendanceRecord).filter(
+            AttendanceRecord.session_id == target_session.id,
+            AttendanceRecord.user_id == current_user.id
+        ).first()
+        
+    return {
+        "active_session": {
+            "id": active_session.id,
+            "status": active_session.status
+        } if active_session else None,
+        "today_session": {
+            "id": today_session.id,
+            "status": today_session.status,
+            "date": format_ist_date(today_session.created_at),
+            "time": format_ist_time(today_session.created_at)
+        } if today_session else None,
+        "already_marked": my_record is not None,
+        "my_record": {
+            "time": format_ist_time(my_record.timestamp),
+            "date": format_ist_date(my_record.timestamp),
+            "status": my_record.status,
+            "session": f"Session {target_session.id:02d}"
+        } if my_record else None
+    }
+
+
 @router.post("/mark")
 def mark_attendance(submission: AttendanceSubmission, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     # Find active session
