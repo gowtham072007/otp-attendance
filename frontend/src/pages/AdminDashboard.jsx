@@ -929,8 +929,8 @@ const AdminDashboard = () => {
 
                     <button 
                       onClick={handleDeleteAllAttendance}
-                      disabled={deleteLoading || (attendanceReport.records && attendanceReport.records.length === 0)}
-                      className="flex items-center space-x-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/80 px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                      disabled={deleteLoading}
+                      className="flex items-center space-x-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/80 px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider disabled:opacity-50"
                       title="Permanently delete all attendance records and sessions"
                     >
                       <Trash2 size={14} />
