@@ -1,6 +1,7 @@
 import os
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from datetime import timedelta
 from ..database import get_db
 from ..models import User, AllowedEmail
@@ -22,12 +23,12 @@ def direct_login(request: DirectLoginRequest, db: Session = Depends(get_db)):
 
         # Determine if this user is or should be an Admin
         is_initial_admin = (email == INITIAL_ADMIN_EMAIL)
-        user = db.query(User).filter(User.email == email).first()
+        user = db.query(User).filter(func.lower(User.email) == email).first()
         is_admin = is_initial_admin or (user is not None and user.role == "ADMIN")
 
         if not is_admin:
             # Check if email is in allowed_emails whitelist
-            allowed = db.query(AllowedEmail).filter(AllowedEmail.email == email).first()
+            allowed = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == email).first()
             if not allowed:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -58,11 +59,16 @@ def direct_login(request: DirectLoginRequest, db: Session = Depends(get_db)):
         access_token = create_access_token(
             data={"sub": user.email, "role": user.role}, expires_delta=access_token_expires
         )
-        return {"access_token": access_token, "token_type": "bearer"}
+        return {
+            "access_token": access_token, 
+            "token_type": "bearer",
+            "user": user
+        }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 
 
 @router.get("/me", response_model=UserResponse)

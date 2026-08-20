@@ -32,10 +32,10 @@ export const AuthProvider = ({ children }) => {
       const response = await api.post('/auth/login', { email, full_name: fullName });
       localStorage.setItem('token', response.data.access_token);
       
-      const userResponse = await api.get('/auth/me');
-      setUser(userResponse.data);
+      const userData = response.data.user;
+      setUser(userData);
       
-      if (userResponse.data.role === 'ADMIN') {
+      if (userData && userData.role === 'ADMIN') {
         navigate('/admin');
       } else {
         navigate('/dashboard');
@@ -45,6 +45,7 @@ export const AuthProvider = ({ children }) => {
       throw error;
     }
   };
+
 
   const logout = () => {
     localStorage.removeItem('token');
