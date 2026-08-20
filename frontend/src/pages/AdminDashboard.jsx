@@ -1,8 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import api from '../services/api';
-import { LogOut, Play, Square, RefreshCw, Download, Users, CheckCircle } from 'lucide-react';
+import { LogOut, Play, Square, RefreshCw, Download, Users, CheckCircle, Clock } from 'lucide-react';
 import { format } from 'date-fns';
+
+const parseExpiryTime = (dateStr) => {
+  if (!dateStr) return 0;
+  if (typeof dateStr !== 'string') return new Date(dateStr).getTime();
+  if (dateStr.endsWith('Z') || /[+-]\d{2}(:\d{2})?$/.test(dateStr)) {
+    return new Date(dateStr).getTime();
+  }
+  return new Date(dateStr + 'Z').getTime();
+};
 
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
@@ -19,7 +28,7 @@ const AdminDashboard = () => {
         setSession(res.data.session);
         if (res.data.otp && res.data.otp.status === 'ACTIVE') {
           setOtp(res.data.otp);
-          const expiresAt = new Date(res.data.otp.expires_at + 'Z').getTime();
+          const expiresAt = parseExpiryTime(res.data.otp.expires_at);
           const now = new Date().getTime();
           setCountdown(Math.max(0, Math.floor((expiresAt - now) / 1000)));
         } else {
@@ -91,7 +100,7 @@ const AdminDashboard = () => {
         expires_at: res.data.expires_at,
         status: res.data.status
       });
-      const expiresAt = new Date(res.data.expires_at + 'Z').getTime();
+      const expiresAt = parseExpiryTime(res.data.expires_at);
       const now = new Date().getTime();
       setCountdown(Math.max(0, Math.floor((expiresAt - now) / 1000)));
     } catch (err) {
