@@ -38,72 +38,73 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Decorative Background */}
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
-      <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
-      <div className="absolute bottom-[-20%] left-[20%] w-96 h-96 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
+    <div className="min-h-screen bg-[#fafafa] bg-grid-pattern flex flex-col items-center justify-center p-4 relative overflow-hidden text-zinc-900">
+      {/* Decorative Monochrome Ambient Glow */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-gradient-to-tr from-zinc-200/50 to-zinc-100/30 rounded-full blur-3xl pointer-events-none -z-10"></div>
 
       <div className="w-full max-w-5xl grid md:grid-cols-2 gap-12 items-center z-10">
         <div className="hidden md:flex flex-col space-y-8 pr-8">
           <div className="space-y-4">
-            <h1 className="text-5xl font-extrabold text-gray-900 tracking-tight leading-tight">
+            <div className="inline-flex items-center space-x-2 px-3 py-1 bg-black text-white text-xs font-mono tracking-wider uppercase rounded-full w-fit">
+              <span>● Attendance OS</span>
+            </div>
+            <h1 className="text-5xl font-black text-black tracking-tight leading-tight">
               Modern <span className="gradient-text">OTP-Based</span> Attendance
             </h1>
-            <p className="text-xl text-gray-600">
+            <p className="text-lg text-zinc-600 leading-relaxed">
               Secure, fast, and reliable attendance tracking for modern classrooms and organizations.
             </p>
           </div>
           
-          <div className="grid grid-cols-2 gap-6">
-            <div className="flex items-start space-x-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100 transition hover:shadow-md">
-              <div className="bg-blue-100 p-2 rounded-lg text-blue-600"><Clock size={24} /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-start space-x-3.5 bg-white p-5 rounded-2xl border border-zinc-200 shadow-sm transition-all hover:border-zinc-400">
+              <div className="bg-zinc-100 p-2.5 rounded-xl text-black border border-zinc-200"><Clock size={22} /></div>
               <div>
-                <h3 className="font-semibold text-gray-800">Time Limited</h3>
-                <p className="text-sm text-gray-500">OTPs expire automatically</p>
+                <h3 className="font-bold text-zinc-900 text-sm">Time Limited</h3>
+                <p className="text-xs text-zinc-500 mt-0.5">OTPs expire automatically</p>
               </div>
             </div>
-            <div className="flex items-start space-x-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100 transition hover:shadow-md">
-              <div className="bg-green-100 p-2 rounded-lg text-green-600"><ShieldCheck size={24} /></div>
+            <div className="flex items-start space-x-3.5 bg-white p-5 rounded-2xl border border-zinc-200 shadow-sm transition-all hover:border-zinc-400">
+              <div className="bg-zinc-100 p-2.5 rounded-xl text-black border border-zinc-200"><ShieldCheck size={22} /></div>
               <div>
-                <h3 className="font-semibold text-gray-800">Instant Access</h3>
-                <p className="text-sm text-gray-500">No passwords required</p>
+                <h3 className="font-bold text-zinc-900 text-sm">Instant Access</h3>
+                <p className="text-xs text-zinc-500 mt-0.5">No passwords required</p>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="glass-panel p-8 md:p-12 rounded-3xl w-full max-w-md mx-auto">
-          <div className="flex flex-col items-center mb-8">
-            <div className="bg-gradient-to-tr from-blue-600 to-indigo-600 p-4 rounded-2xl shadow-lg mb-6">
-              <CalendarCheck size={40} className="text-white" />
+        <div className="glass-panel p-8 md:p-10 rounded-3xl w-full max-w-md mx-auto border border-zinc-200/80 bg-white/90 shadow-2xl">
+          <div className="flex flex-col items-center mb-8 text-center">
+            <div className="bg-black p-4 rounded-2xl shadow-md mb-5 text-white">
+              <CalendarCheck size={36} />
             </div>
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h2>
-            <p className="text-gray-500 text-center">Enter your details to continue.</p>
+            <h2 className="text-2xl font-black text-black tracking-tight">Welcome Back</h2>
+            <p className="text-zinc-500 text-sm mt-1">Enter your details to continue.</p>
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl mb-6 text-sm text-center">
+            <div className="bg-zinc-100 border border-zinc-300 text-zinc-900 px-4 py-3 rounded-xl mb-6 text-sm text-center font-medium">
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+              <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700 mb-1.5">Full Name</label>
               <input 
                 type="text" 
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition"
+                className="w-full px-4 py-3 rounded-xl border border-zinc-300 bg-zinc-50/50 text-zinc-900 placeholder-zinc-400 focus:bg-white focus:border-black focus:ring-4 focus:ring-zinc-100 outline-none transition font-medium text-sm"
                 placeholder="John Doe"
                 value={formData.name}
                 onChange={(e) => setFormData({...formData, name: e.target.value})}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+              <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700 mb-1.5">Email Address</label>
               <input 
                 type="email" 
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition"
+                className="w-full px-4 py-3 rounded-xl border border-zinc-300 bg-zinc-50/50 text-zinc-900 placeholder-zinc-400 focus:bg-white focus:border-black focus:ring-4 focus:ring-zinc-100 outline-none transition font-medium text-sm"
                 placeholder="john@example.com"
                 value={formData.email}
                 onChange={(e) => setFormData({...formData, email: e.target.value})}
@@ -112,15 +113,15 @@ const Login = () => {
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full mt-4 flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition shadow-md disabled:bg-blue-400"
+              className="w-full mt-2 flex items-center justify-center space-x-2 bg-black hover:bg-zinc-800 active:scale-[0.99] text-white py-3.5 rounded-xl font-bold transition shadow-lg disabled:bg-zinc-300 disabled:text-zinc-500"
             >
               <span>{loading ? 'Logging in...' : 'Continue'}</span>
               {!loading && <ArrowRight size={18} />}
             </button>
           </form>
           
-          <div className="mt-8 text-center text-sm text-gray-400">
-            By signing in, you agree to our Terms of Service and Privacy Policy.
+          <div className="mt-8 text-center text-xs text-zinc-400">
+            By signing in, you agree to our Terms of Service.
           </div>
         </div>
       </div>

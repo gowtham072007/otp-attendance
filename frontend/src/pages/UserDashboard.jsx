@@ -84,43 +84,46 @@ const UserDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
-      <nav className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
+    <div className="min-h-screen bg-[#fafafa] bg-grid-pattern font-sans text-zinc-900 flex flex-col">
+      <nav className="bg-white/90 backdrop-blur-md border-b border-zinc-200 px-6 py-4 flex justify-between items-center sticky top-0 z-20 shadow-xs">
         <div className="flex items-center space-x-3">
           {user.picture ? (
-            <img src={user.picture} alt="Profile" className="w-10 h-10 rounded-full border-2 border-blue-100 shadow-sm" />
+            <img src={user.picture} alt="Profile" className="w-10 h-10 rounded-xl border border-zinc-200 shadow-xs object-cover" />
           ) : (
-            <div className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-xl shadow-md">
+            <div className="w-10 h-10 bg-black text-white rounded-xl flex items-center justify-center font-mono font-black text-lg shadow-sm border border-zinc-800">
               {user.full_name?.charAt(0) || 'U'}
             </div>
           )}
           <div>
-            <h1 className="text-xl font-bold text-gray-800">Hello, {user.full_name}</h1>
-            <p className="text-xs text-gray-500">{user.email}</p>
+            <h1 className="text-base font-black text-black tracking-tight">Hello, {user.full_name}</h1>
+            <p className="text-xs text-zinc-500 font-mono">{user.email}</p>
           </div>
         </div>
-        <button onClick={logout} className="flex items-center space-x-2 text-gray-600 hover:text-red-600 transition-colors bg-gray-100 hover:bg-red-50 px-4 py-2 rounded-lg font-medium">
-          <LogOut size={18} />
+        <button onClick={logout} className="flex items-center space-x-2 text-zinc-700 hover:text-black hover:bg-zinc-100 transition-all bg-white border border-zinc-200 px-4 py-2 rounded-xl text-xs font-bold font-mono uppercase tracking-wider shadow-xs">
+          <LogOut size={16} />
           <span className="hidden sm:inline">Sign Out</span>
         </button>
       </nav>
 
-      <main className="max-w-4xl mx-auto mt-8 p-4 grid gap-8 md:grid-cols-5">
+      <main className="max-w-4xl mx-auto mt-8 p-4 w-full grid gap-8 md:grid-cols-5 flex-1">
         
         {/* Left Column - Mark Attendance */}
         <div className="md:col-span-3 space-y-6">
-          <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">Mark Attendance</h2>
-            <p className="text-gray-500 mb-8">Enter the 6-digit OTP displayed by your admin on the screen.</p>
+          <div className="bg-white p-8 rounded-3xl shadow-sm border border-zinc-200">
+            <div className="inline-flex items-center space-x-2 px-3 py-1 bg-zinc-100 border border-zinc-200 text-zinc-800 text-[11px] font-mono uppercase tracking-wider rounded-full mb-3">
+              <span>● Attendance Check-in</span>
+            </div>
+            <h2 className="text-2xl font-black text-black tracking-tight mb-1">Enter Active OTP</h2>
+            <p className="text-zinc-500 text-sm mb-8">Enter the 6-digit dynamic passcode displayed on the screen.</p>
             
             {status.message && (
-              <div className={`p-4 rounded-xl mb-8 flex items-start space-x-3 ${status.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                {status.type === 'success' ? <CheckCircle className="shrink-0 mt-0.5" size={20} /> : <AlertCircle className="shrink-0 mt-0.5" size={20} />}
-                <p className="font-medium text-sm">{status.message}</p>
+              <div className={`p-4 rounded-2xl mb-8 flex items-start space-x-3 text-sm font-medium ${status.type === 'success' ? 'bg-zinc-100 text-zinc-900 border border-zinc-300' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                {status.type === 'success' ? <CheckCircle className="shrink-0 mt-0.5 text-black" size={18} /> : <AlertCircle className="shrink-0 mt-0.5" size={18} />}
+                <p>{status.message}</p>
               </div>
             )}
 
-            <div className="flex justify-center gap-2 sm:gap-4 mb-8">
+            <div className="flex justify-center gap-2 sm:gap-3.5 mb-8">
               {otp.map((digit, index) => (
                 <input
                   key={index}
@@ -130,7 +133,7 @@ const UserDashboard = () => {
                   value={digit}
                   onChange={(e) => handleChange(index, e)}
                   onKeyDown={(e) => handleKeyDown(index, e)}
-                  className="w-12 h-14 sm:w-16 sm:h-20 text-center text-2xl sm:text-4xl font-bold rounded-xl border-2 border-gray-200 bg-gray-50 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all outline-none"
+                  className="w-12 h-14 sm:w-14 sm:h-18 text-center text-2xl sm:text-3xl font-black font-mono rounded-2xl border-2 border-zinc-200 bg-zinc-50/70 text-zinc-900 focus:bg-white focus:border-black focus:ring-4 focus:ring-zinc-100 transition-all outline-none"
                 />
               ))}
             </div>
@@ -138,42 +141,38 @@ const UserDashboard = () => {
             <button
               onClick={submitAttendance}
               disabled={submitting}
-              className={`w-full py-4 rounded-xl font-bold text-lg shadow-md transition-all ${
-                submitting 
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                  : 'bg-blue-600 hover:bg-blue-700 text-white hover:shadow-lg'
-              }`}
+              className="w-full py-4 rounded-2xl font-bold text-sm tracking-wider uppercase font-mono shadow-md transition-all active:scale-[0.99] bg-black hover:bg-zinc-800 text-white disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed"
             >
-              {submitting ? 'Verifying...' : 'Submit Attendance'}
+              {submitting ? 'Verifying OTP...' : 'Submit Attendance'}
             </button>
           </div>
         </div>
 
         {/* Right Column - History */}
         <div className="md:col-span-2">
-          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 h-full flex flex-col overflow-hidden">
-            <div className="p-6 border-b border-gray-100 flex items-center space-x-2">
-              <History className="text-gray-400" size={20} />
-              <h3 className="font-bold text-gray-800">My History</h3>
+          <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 h-full flex flex-col overflow-hidden">
+            <div className="p-5 border-b border-zinc-200 bg-zinc-50/50 flex items-center space-x-2">
+              <History className="text-zinc-600" size={18} />
+              <h3 className="font-bold text-xs uppercase tracking-wider font-mono text-black">My Check-in Log</h3>
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {history.length === 0 ? (
-                <div className="text-center py-10 text-gray-400 text-sm">
+                <div className="text-center py-12 text-zinc-400 text-xs font-mono">
                   No attendance records found yet.
                 </div>
               ) : (
                 history.map((record, index) => (
-                  <div key={index} className="flex justify-between items-center p-4 bg-gray-50 rounded-xl border border-gray-100 hover:bg-blue-50/30 transition-colors">
+                  <div key={index} className="flex justify-between items-center p-4 bg-zinc-50/70 rounded-2xl border border-zinc-200 hover:bg-zinc-100/70 transition-colors">
                     <div>
-                      <p className="font-semibold text-gray-800 text-sm">{record.date}</p>
-                      <p className="text-xs text-gray-500 mt-1">{record.session}</p>
+                      <p className="font-bold text-zinc-900 text-xs font-mono">{record.date}</p>
+                      <p className="text-[11px] text-zinc-500 font-mono mt-0.5">{record.session}</p>
                     </div>
                     <div className="text-right">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mb-1">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-black text-white mb-1">
                         {record.status}
                       </span>
-                      <p className="text-xs text-gray-500 font-mono">{record.time}</p>
+                      <p className="text-xs text-zinc-500 font-mono">{record.time}</p>
                     </div>
                   </div>
                 ))
