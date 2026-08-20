@@ -44,14 +44,24 @@ def format_ist_time_short(dt: Optional[datetime]) -> str:
     ist_dt = to_ist(dt)
     return ist_dt.strftime("%I:%M %p") if ist_dt else "—"
 
+def get_today_session(db: Session) -> Optional[AttendanceSession]:
+    today_ist_str = datetime.now(IST).strftime("%d-%m-%Y")
+    sessions = db.query(AttendanceSession).order_by(AttendanceSession.id.desc()).all()
+    for s in sessions:
+        if format_ist_date(s.created_at) == today_ist_str:
+            return s
+    return None
+
 # --- Helper to calculate Present and Absent students for a session ---
 
 def compute_session_attendance(db: Session, session_id: Optional[int] = None):
     if session_id:
         target_session = db.query(AttendanceSession).filter(AttendanceSession.id == session_id).first()
     else:
-        # Get active session or most recent session
-        target_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
+        # Check today's session first, or active session, or most recent session
+        target_session = get_today_session(db)
+        if not target_session:
+            target_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
         if not target_session:
             target_session = db.query(AttendanceSession).order_by(AttendanceSession.id.desc()).first()
             
@@ -192,10 +202,18 @@ def get_all_sessions(db: Session = Depends(get_db), admin: User = Depends(get_cu
 
 @router.post("/session/start", response_model=OTPSessionResponse)
 def start_session(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    # Check if there's already an active session
+    # 1. Check if there's already an active session
     active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
     if active_session:
-        raise HTTPException(status_code=400, detail="An active session already exists")
+        raise HTTPException(status_code=400, detail="An active attendance session is already running.")
+    
+    # 2. Check 1 session per day limit (IST)
+    today_session = get_today_session(db)
+    if today_session:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Only 1 session is allowed per day. Today's session (Session #{today_session.id}) was already conducted on {format_ist_date(today_session.created_at)}."
+        )
     
     new_session = AttendanceSession(admin_id=admin.id, status="ACTIVE")
     db.add(new_session)
@@ -251,23 +269,32 @@ def end_session(db: Session = Depends(get_db), admin: User = Depends(get_current
 @router.get("/session/current")
 def get_current_session(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
-    if not active_session:
-        return {"session": None, "otp": None}
+    today_session = get_today_session(db)
     
-    active_otp = db.query(OTP).filter(
-        OTP.session_id == active_session.id, 
-        OTP.status == "ACTIVE",
-        OTP.expires_at > datetime.now(timezone.utc)
-    ).order_by(OTP.created_at.desc()).first()
+    active_otp = None
+    if active_session:
+        active_otp = db.query(OTP).filter(
+            OTP.session_id == active_session.id, 
+            OTP.status == "ACTIVE",
+            OTP.expires_at > datetime.now(timezone.utc)
+        ).order_by(OTP.created_at.desc()).first()
     
     return {
-        "session": active_session.id,
+        "session": active_session.id if active_session else None,
+        "today_session": {
+            "id": today_session.id,
+            "status": today_session.status,
+            "date": format_ist_date(today_session.created_at),
+            "time": format_ist_time(today_session.created_at)
+        } if today_session else None,
+        "today_completed": (today_session is not None and today_session.status == "CLOSED"),
         "otp": {
             "code": active_otp.otp_code if active_otp else None,
             "expires_at": active_otp.expires_at if active_otp else None,
             "status": active_otp.status if active_otp else None
         } if active_otp else None
     }
+
 
 @router.get("/session/attendance")
 def get_attendance(session_id: Optional[int] = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):

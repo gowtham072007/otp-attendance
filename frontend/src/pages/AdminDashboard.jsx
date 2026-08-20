@@ -79,6 +79,9 @@ const AdminDashboard = () => {
   const [sessionEndedMessage, setSessionEndedMessage] = useState(null);
   const [copiedAbsent, setCopiedAbsent] = useState(false);
 
+  const [todaySession, setTodaySession] = useState(null);
+  const [todayCompleted, setTodayCompleted] = useState(false);
+
   // Whitelist state
   const [allowedEmails, setAllowedEmails] = useState([]);
   const [newEmail, setNewEmail] = useState('');
@@ -119,6 +122,13 @@ const AdminDashboard = () => {
   const fetchCurrentSession = async () => {
     try {
       const res = await api.get('/admin/session/current');
+      if (res.data.today_session) {
+        setTodaySession(res.data.today_session);
+      } else {
+        setTodaySession(null);
+      }
+      setTodayCompleted(Boolean(res.data.today_completed));
+
       if (res.data.session) {
         setSession(res.data.session);
         if (res.data.otp && res.data.otp.status === 'ACTIVE') {
@@ -206,7 +216,7 @@ const AdminDashboard = () => {
       await fetchAttendance(res.data.id);
       await fetchAllSessions();
     } catch (err) {
-      alert("Error starting session: " + (err.response?.data?.detail || err.message));
+      alert("Cannot Start Session: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -217,6 +227,7 @@ const AdminDashboard = () => {
       setSession(null);
       setOtp(null);
       setCountdown(0);
+      setTodayCompleted(true);
       
       if (res.data.report) {
         setAttendanceReport(res.data.report);
@@ -230,6 +241,7 @@ const AdminDashboard = () => {
           present_list: res.data.report.present_list || []
         });
       }
+      await fetchCurrentSession();
       await fetchAllSessions();
     } catch (err) {
       console.error("Error ending session", err);
@@ -507,7 +519,7 @@ const AdminDashboard = () => {
                   <div>
                     <h3 className="text-lg font-black tracking-tight">Session #{sessionEndedMessage.id} Ended (IST)</h3>
                     <p className="text-xs text-zinc-400 mt-0.5">
-                      Session closed. Check the Absent and Present breakdowns below.
+                      Session closed. Final Present and Absent lists are displayed below.
                     </p>
                   </div>
                 </div>
@@ -530,96 +542,209 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {/* Dedicated Absent List Card (Displayed especially after session ends or when there are absent students) */}
-            {attendanceReport.absent_list && attendanceReport.absent_list.length > 0 && (
-              <div className="bg-rose-50/60 dark:bg-rose-950/20 border-2 border-rose-200 dark:border-rose-900/60 rounded-3xl p-6 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2.5 bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300 rounded-xl border border-rose-300 dark:border-rose-800">
-                      <UserX size={20} />
-                    </div>
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <h3 className="text-base font-black text-rose-950 dark:text-rose-200 tracking-tight">
-                          Absent Students List
-                        </h3>
-                        <span className="bg-rose-200 dark:bg-rose-900/80 text-rose-800 dark:text-rose-200 text-xs font-mono font-bold px-2.5 py-0.5 rounded-full">
-                          {attendanceReport.absent_list.length} Students Absent
-                        </span>
+            {/* DEDICATED PRESENT & ABSENT STUDENT BREAKDOWN LISTS */}
+            {attendanceReport.records && attendanceReport.records.length > 0 && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                {/* 1. PRESENT STUDENTS CARD */}
+                <div className="bg-emerald-50/60 dark:bg-emerald-950/20 border-2 border-emerald-200 dark:border-emerald-900/60 rounded-3xl p-6 shadow-sm flex flex-col">
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 rounded-xl border border-emerald-300 dark:border-emerald-800">
+                        <UserCheck size={20} />
                       </div>
-                      <p className="text-xs text-rose-700/80 dark:text-rose-400 mt-0.5">
-                        Students who were authorized but did not check in during {attendanceReport.session ? `Session #${attendanceReport.session.id}` : 'this session'}
-                      </p>
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <h3 className="text-base font-black text-emerald-950 dark:text-emerald-200 tracking-tight">
+                            Present Students List
+                          </h3>
+                          <span className="bg-emerald-200 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200 text-xs font-mono font-bold px-2.5 py-0.5 rounded-full">
+                            {attendanceReport.present_list?.length || 0} Present
+                          </span>
+                        </div>
+                        <p className="text-xs text-emerald-700/80 dark:text-emerald-400 mt-0.5">
+                          Verified check-ins for {attendanceReport.session ? `Session #${attendanceReport.session.id}` : 'this session'}
+                        </p>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center space-x-2">
                     <button
-                      onClick={handleCopyAbsentEmails}
-                      className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition shadow-xs"
-                    >
-                      {copiedAbsent ? <Check size={14} /> : <Copy size={14} />}
-                      <span>{copiedAbsent ? 'Emails Copied!' : 'Copy Absent Emails'}</span>
-                    </button>
-                    <button
-                      onClick={() => setAttendanceFilter('ABSENT')}
-                      className={`px-3 py-2 rounded-xl text-xs font-bold font-mono transition border ${
-                        attendanceFilter === 'ABSENT'
-                          ? 'bg-rose-900 text-white border-transparent'
-                          : 'bg-white dark:bg-zinc-900 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                      onClick={() => setAttendanceFilter('PRESENT')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition border ${
+                        attendanceFilter === 'PRESENT'
+                          ? 'bg-emerald-800 text-white border-transparent'
+                          : 'bg-white dark:bg-zinc-900 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
                       }`}
                     >
-                      Filter Table to Absent
+                      Filter Table
                     </button>
+                  </div>
+
+                  {/* Present Student Chips/List */}
+                  <div className="space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
+                    {attendanceReport.present_list && attendanceReport.present_list.length > 0 ? (
+                      attendanceReport.present_list.map((student, idx) => (
+                        <div 
+                          key={idx}
+                          className="bg-white dark:bg-zinc-900/90 border border-emerald-200 dark:border-emerald-900/60 p-3 rounded-2xl flex items-center justify-between shadow-xs"
+                        >
+                          <div className="overflow-hidden mr-2">
+                            <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">{student.name}</p>
+                            <p className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 truncate">{student.email}</p>
+                          </div>
+                          <div className="shrink-0 flex items-center space-x-2">
+                            <span className="text-[11px] font-mono font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                              {student.time}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-900 text-[10px] font-mono font-bold uppercase flex items-center space-x-1">
+                              <Check size={10} className="stroke-[3]" />
+                              <span>Present</span>
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-8 text-center text-xs font-mono text-emerald-700/60 dark:text-emerald-400/60">
+                        No students have checked in yet.
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Absent Student Chips/List */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {attendanceReport.absent_list.map((student, idx) => (
-                    <div 
-                      key={idx}
-                      className="bg-white dark:bg-zinc-900/90 border border-rose-200 dark:border-rose-900/60 p-3.5 rounded-2xl flex items-center justify-between shadow-xs"
-                    >
-                      <div className="overflow-hidden mr-2">
-                        <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">{student.name}</p>
-                        <p className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 truncate">{student.email}</p>
+                {/* 2. ABSENT STUDENTS CARD */}
+                <div className="bg-rose-50/60 dark:bg-rose-950/20 border-2 border-rose-200 dark:border-rose-900/60 rounded-3xl p-6 shadow-sm flex flex-col">
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2.5 bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300 rounded-xl border border-rose-300 dark:border-rose-800">
+                        <UserX size={20} />
                       </div>
-                      <span className="shrink-0 px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 text-[10px] font-mono font-bold uppercase">
-                        Absent
-                      </span>
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <h3 className="text-base font-black text-rose-950 dark:text-rose-200 tracking-tight">
+                            Absent Students List
+                          </h3>
+                          <span className="bg-rose-200 dark:bg-rose-900/80 text-rose-800 dark:text-rose-200 text-xs font-mono font-bold px-2.5 py-0.5 rounded-full">
+                            {attendanceReport.absent_list?.length || 0} Absent
+                          </span>
+                        </div>
+                        <p className="text-xs text-rose-700/80 dark:text-rose-400 mt-0.5">
+                          Authorized students who did not check in
+                        </p>
+                      </div>
                     </div>
-                  ))}
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={handleCopyAbsentEmails}
+                        className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition shadow-xs"
+                      >
+                        {copiedAbsent ? <Check size={12} /> : <Copy size={12} />}
+                        <span>{copiedAbsent ? 'Copied!' : 'Copy Emails'}</span>
+                      </button>
+                      <button
+                        onClick={() => setAttendanceFilter('ABSENT')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition border ${
+                          attendanceFilter === 'ABSENT'
+                            ? 'bg-rose-800 text-white border-transparent'
+                            : 'bg-white dark:bg-zinc-900 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                        }`}
+                      >
+                        Filter Table
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Absent Student Chips/List */}
+                  <div className="space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
+                    {attendanceReport.absent_list && attendanceReport.absent_list.length > 0 ? (
+                      attendanceReport.absent_list.map((student, idx) => (
+                        <div 
+                          key={idx}
+                          className="bg-white dark:bg-zinc-900/90 border border-rose-200 dark:border-rose-900/60 p-3 rounded-2xl flex items-center justify-between shadow-xs"
+                        >
+                          <div className="overflow-hidden mr-2">
+                            <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">{student.name}</p>
+                            <p className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 truncate">{student.email}</p>
+                          </div>
+                          <span className="shrink-0 px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 text-[10px] font-mono font-bold uppercase flex items-center space-x-1">
+                            <XCircle size={10} className="stroke-[2.5]" />
+                            <span>Absent</span>
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-8 text-center text-xs font-mono text-rose-700/60 dark:text-rose-400/60">
+                        All authorized students are present! (0 absent)
+                      </div>
+                    )}
+                  </div>
                 </div>
+
               </div>
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* Left Column - Controls & Stats */}
               <div className="space-y-6 lg:col-span-1">
-                {/* Status Card */}
+                
+                {/* Session Control Card */}
                 <div className="bg-white dark:bg-zinc-900/90 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 flex flex-col relative overflow-hidden">
-                  <h2 className="text-base font-black uppercase tracking-wider text-black dark:text-white mb-4">Session Control</h2>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-base font-black uppercase tracking-wider text-black dark:text-white">Session Control</h2>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                      1 Session / Day
+                    </span>
+                  </div>
                   
-                  {!session ? (
+                  {/* CASE 1: No active session & today's session is already completed */}
+                  {!session && todayCompleted && (
+                    <div className="flex flex-col items-center justify-center py-6 text-center">
+                      <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 p-4 rounded-2xl mb-4 text-emerald-600 dark:text-emerald-400">
+                        <CheckCircle size={32} />
+                      </div>
+                      <span className="px-3 py-1 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-[11px] font-mono font-bold uppercase tracking-wider rounded-full mb-2">
+                        TODAY'S SESSION COMPLETED
+                      </span>
+                      <p className="text-zinc-600 dark:text-zinc-300 text-xs font-medium mb-1">
+                        {todaySession ? `Session #${todaySession.id} concluded on ${todaySession.date} (IST).` : "Today's attendance session is closed."}
+                      </p>
+                      <p className="text-zinc-400 dark:text-zinc-500 text-[11px] font-mono mb-4">
+                        Policy: Maximum 1 session per day. You can start the next session tomorrow.
+                      </p>
+                      <button 
+                        disabled
+                        className="w-full flex items-center justify-center space-x-2 bg-zinc-100 dark:bg-zinc-800/80 text-zinc-400 dark:text-zinc-500 px-6 py-3.5 rounded-xl border border-zinc-200 dark:border-zinc-700 font-bold text-xs font-mono uppercase tracking-wider cursor-not-allowed"
+                      >
+                        <Calendar size={16} />
+                        <span>Completed For Today</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* CASE 2: No active session & no session conducted yet today */}
+                  {!session && !todayCompleted && (
                     <div className="flex flex-col items-center justify-center py-6 text-center">
                       <div className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 p-4 rounded-2xl mb-4 text-zinc-400 dark:text-zinc-500">
-                        <Square size={28} />
+                        <Play size={28} />
                       </div>
-                      <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-4">
-                        {attendanceReport.session 
-                          ? `Last Session #${attendanceReport.session.id} is closed.` 
-                          : "No active attendance session."}
+                      <p className="text-zinc-700 dark:text-zinc-300 text-sm font-semibold mb-1">
+                        Ready to Start Today's Attendance
+                      </p>
+                      <p className="text-zinc-400 dark:text-zinc-500 text-xs mb-4">
+                        One session can be generated today. Students will use the 7-second OTP to mark attendance.
                       </p>
                       <button 
                         onClick={startSession} 
                         className="w-full flex items-center justify-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 active:scale-[0.99] text-white px-6 py-3.5 rounded-xl shadow-md transition-all font-bold text-sm"
                       >
                         <Play size={18} />
-                        <span>Start New Session</span>
+                        <span>Start Today's Session</span>
                       </button>
                     </div>
-                  ) : (
+                  )}
+
+                  {/* CASE 3: Active session currently running */}
+                  {session && (
                     <div className="flex flex-col">
                       <div className="flex justify-between items-center mb-6">
                         <span className="px-3 py-1 bg-black text-white dark:bg-white dark:text-black text-[11px] font-mono font-bold uppercase tracking-wider rounded-full flex items-center shadow-xs">
@@ -665,7 +790,7 @@ const AdminDashboard = () => {
                         className="w-full flex items-center justify-center space-x-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 px-6 py-3.5 rounded-xl transition-all font-bold text-sm shadow-xs"
                       >
                         <Square size={16} />
-                        <span>End Session & View Absent List</span>
+                        <span>End Session & View Attendance</span>
                       </button>
                     </div>
                   )}
@@ -724,6 +849,7 @@ const AdminDashboard = () => {
 
               {/* Right Column - Attendance Table (Present & Absent Breakdown) */}
               <div className="bg-white dark:bg-zinc-900/90 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 flex flex-col lg:col-span-2 overflow-hidden">
+
                 
                 {/* Header & Controls */}
                 <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-50/50 dark:bg-zinc-900/50">
