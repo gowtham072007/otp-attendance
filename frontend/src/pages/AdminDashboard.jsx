@@ -816,7 +816,7 @@ const AdminDashboard = () => {
                         Ready to Start Today's Attendance
                       </p>
                       <p className="text-zinc-400 dark:text-zinc-500 text-xs mb-4">
-                        One session can be generated today. Students will use the 7-second OTP to mark attendance.
+                        One session can be generated today. Students will use the 30-second OTP to mark attendance.
                       </p>
                       <button 
                         onClick={startSession} 
@@ -1176,7 +1176,7 @@ const AdminDashboard = () => {
                     <input
                       type="email"
                       required
-                      placeholder="student@example.com"
+                      placeholder="username@francisxavier.ac.in"
                       value={newEmail}
                       onChange={(e) => setNewEmail(e.target.value)}
                       className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/60 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800 outline-none transition font-medium text-sm"
@@ -1226,7 +1226,7 @@ const AdminDashboard = () => {
                   <form onSubmit={handleAddBulkEmails} className="space-y-3">
                     <textarea
                       rows={5}
-                      placeholder={`student1@college.edu\nstudent2@college.edu\nstudent3@college.edu`}
+                      placeholder={`student1@francisxavier.ac.in\nstudent2@francisxavier.ac.in\nstudent3@francisxavier.ac.in`}
                       value={bulkEmails}
                       onChange={(e) => setBulkEmails(e.target.value)}
                       className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/60 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800 outline-none transition font-mono text-xs"

@@ -241,7 +241,7 @@ def generate_otp(db: Session = Depends(get_db), admin: User = Depends(get_curren
     
     # Generate 6-digit random OTP
     otp_code = ''.join(random.choices(string.digits, k=6))
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=7) # 7 seconds expiry
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=30) # 30 seconds expiry
     
     new_otp = OTP(session_id=active_session.id, otp_code=otp_code, expires_at=expires_at, status="ACTIVE")
     db.add(new_otp)
