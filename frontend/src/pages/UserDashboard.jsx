@@ -123,13 +123,9 @@ const UserDashboard = () => {
     <div className="min-h-screen bg-[#fafafa] dark:bg-[#09090b] bg-grid-pattern font-sans text-zinc-900 dark:text-zinc-100 flex flex-col transition-colors duration-200">
       <nav className="bg-white/90 dark:bg-zinc-950/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 flex justify-between items-center sticky top-0 z-20 shadow-xs">
         <div className="flex items-center space-x-3">
-          {user.picture ? (
-            <img src={user.picture} alt="Profile" className="w-10 h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-xs object-cover" />
-          ) : (
-            <div className="w-10 h-10 bg-black text-white dark:bg-white dark:text-black rounded-xl flex items-center justify-center font-mono font-black text-lg shadow-sm border border-zinc-800 dark:border-zinc-200">
-              {user.full_name?.charAt(0) || 'U'}
-            </div>
-          )}
+          <div className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-900 p-1 border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center justify-center shrink-0">
+            <img src="/logo-transparent.png" alt="Attendance OS" className="w-full h-full object-contain" />
+          </div>
           <div>
             <h1 className="text-base font-black text-black dark:text-white tracking-tight">Hello, {user.full_name}</h1>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">{user.email}</p>
