@@ -3,11 +3,29 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from .database import engine, Base
+from .database import engine, Base, SessionLocal
+from .models import AllowedEmail
 from .routes import auth, admin, attendance
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
+
+def seed_initial_admin():
+    initial_admin = os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower()
+    if initial_admin and "@" in initial_admin:
+        db = SessionLocal()
+        try:
+            exists = db.query(AllowedEmail).filter(AllowedEmail.email == initial_admin).first()
+            if not exists:
+                admin_entry = AllowedEmail(email=initial_admin, name="Administrator")
+                db.add(admin_entry)
+                db.commit()
+        except Exception as e:
+            print("Error seeding initial admin:", e)
+        finally:
+            db.close()
+
+seed_initial_admin()
 
 app = FastAPI(title="OTP Attendance API")
 

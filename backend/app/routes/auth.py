@@ -34,6 +34,16 @@ def direct_login(request: DirectLoginRequest, db: Session = Depends(get_db)):
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access Denied: Your email ID is not authorized. Please contact the Admin to register your email."
                 )
+        else:
+            # Admin login: permanently ensure admin email is in the Authorized Login Whitelist
+            allowed = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == email).first()
+            if not allowed:
+                admin_allowed = AllowedEmail(
+                    email=email,
+                    name=full_name or "Administrator"
+                )
+                db.add(admin_allowed)
+                db.commit()
 
         if not user:
             # Create user
