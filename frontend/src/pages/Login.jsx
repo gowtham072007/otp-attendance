@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { ShieldCheck, CalendarCheck, Clock, ArrowRight } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
-import InstallAppButton from '../components/InstallAppButton';
 
 const Login = () => {
   const { login, user } = useAuth();
@@ -41,9 +40,8 @@ const Login = () => {
 
   return (
     <div className="min-h-screen bg-[#fafafa] dark:bg-[#09090b] bg-grid-pattern flex flex-col items-center justify-center p-4 relative overflow-hidden text-zinc-900 dark:text-zinc-100 transition-colors duration-200">
-      {/* Top Bar with Install App & Theme Toggle */}
+      {/* Top Bar with Theme Toggle */}
       <div className="absolute top-6 right-6 z-20 flex items-center space-x-2">
-        <InstallAppButton />
         <ThemeToggle />
       </div>
 
@@ -54,9 +52,6 @@ const Login = () => {
         <div className="hidden md:flex flex-col space-y-8 pr-8">
           <div className="space-y-4">
             <div className="flex items-center space-x-3 mb-2">
-              <div className="w-14 h-14 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-1.5 shadow-md flex items-center justify-center shrink-0">
-                <img src="/favicon.svg" alt="Attendance OS Logo" className="w-full h-full object-contain" />
-              </div>
               <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 bg-black text-white dark:bg-white dark:text-black text-xs font-mono tracking-wider uppercase rounded-full w-fit shadow-xs">
                 <span>● Attendance OS</span>
               </div>
@@ -89,9 +84,6 @@ const Login = () => {
 
         <div className="glass-panel p-8 md:p-10 rounded-3xl w-full max-w-md mx-auto border border-zinc-200/80 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/85 shadow-2xl">
           <div className="flex flex-col items-center mb-8 text-center">
-            <div className="w-20 h-20 bg-white dark:bg-zinc-900 rounded-2xl shadow-md mb-4 p-2 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center transition-transform hover:scale-105">
-              <img src="/favicon.svg" alt="Attendance OS Logo" className="w-full h-full object-contain" />
-            </div>
             <h2 className="text-2xl font-black text-black dark:text-white tracking-tight">Welcome Back</h2>
             <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-1">Enter your details to continue.</p>
           </div>

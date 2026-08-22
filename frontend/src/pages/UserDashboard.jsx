@@ -3,7 +3,6 @@ import { useAuth } from '../hooks/useAuth';
 import api from '../services/api';
 import { LogOut, CheckCircle, AlertCircle, History, Clock, Lock, Radio, UserCheck, UserX } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
-import InstallAppButton from '../components/InstallAppButton';
 
 const UserDashboard = () => {
   const { user, logout } = useAuth();
@@ -124,16 +123,12 @@ const UserDashboard = () => {
     <div className="min-h-screen bg-[#fafafa] dark:bg-[#09090b] bg-grid-pattern font-sans text-zinc-900 dark:text-zinc-100 flex flex-col transition-colors duration-200">
       <nav className="bg-white/90 dark:bg-zinc-950/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 flex justify-between items-center sticky top-0 z-20 shadow-xs">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-900 p-1 border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center justify-center shrink-0">
-            <img src="/favicon.svg" alt="Attendance OS" className="w-full h-full object-contain" />
-          </div>
           <div>
             <h1 className="text-base font-black text-black dark:text-white tracking-tight">Hello, {user.full_name}</h1>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">{user.email}</p>
           </div>
         </div>
         <div className="flex items-center space-x-3">
-          <InstallAppButton />
           <ThemeToggle />
           <button onClick={logout} className="flex items-center space-x-2 text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-4 py-2.5 rounded-xl text-xs font-bold font-mono uppercase tracking-wider shadow-xs">
             <LogOut size={16} />

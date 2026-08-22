@@ -25,7 +25,6 @@ import {
   Calendar
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
-import InstallAppButton from '../components/InstallAppButton';
 
 const parseExpiryTime = (dateStr) => {
   if (!dateStr) return 0;
@@ -483,9 +482,6 @@ const AdminDashboard = () => {
       {/* Top Navigation */}
       <nav className="bg-white/90 dark:bg-zinc-950/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 flex justify-between items-center sticky top-0 z-20 shadow-xs">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-900 p-1 border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center justify-center shrink-0">
-            <img src="/favicon.svg" alt="Attendance OS" className="w-full h-full object-contain" />
-          </div>
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-lg font-black text-black dark:text-white tracking-tight">Admin Dashboard</h1>
@@ -531,7 +527,6 @@ const AdminDashboard = () => {
         </div>
 
         <div className="flex items-center space-x-3">
-          <InstallAppButton />
           <ThemeToggle />
           <button 
             onClick={logout} 
