@@ -1,0 +1,37 @@
+{
+  "short_name": "Attendance",
+  "name": "Attendance OS - OTP Attendance System",
+  "description": "Secure, real-time OTP attendance tracking system.",
+  "icons": [
+    {
+      "src": "/logo-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo-maskable-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/logo-maskable-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#09090b",
+  "theme_color": "#000000",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "scope": "/"
+}

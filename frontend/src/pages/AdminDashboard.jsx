@@ -25,6 +25,7 @@ import {
   Calendar
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
+import InstallAppButton from '../components/InstallAppButton';
 
 const parseExpiryTime = (dateStr) => {
   if (!dateStr) return 0;
@@ -530,6 +531,7 @@ const AdminDashboard = () => {
         </div>
 
         <div className="flex items-center space-x-3">
+          <InstallAppButton />
           <ThemeToggle />
           <button 
             onClick={logout} 

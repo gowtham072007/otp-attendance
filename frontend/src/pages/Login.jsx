@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { ShieldCheck, CalendarCheck, Clock, ArrowRight } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
+import InstallAppButton from '../components/InstallAppButton';
 
 const Login = () => {
   const { login, user } = useAuth();
@@ -40,8 +41,9 @@ const Login = () => {
 
   return (
     <div className="min-h-screen bg-[#fafafa] dark:bg-[#09090b] bg-grid-pattern flex flex-col items-center justify-center p-4 relative overflow-hidden text-zinc-900 dark:text-zinc-100 transition-colors duration-200">
-      {/* Top Bar with Theme Toggle */}
-      <div className="absolute top-6 right-6 z-20">
+      {/* Top Bar with Install App & Theme Toggle */}
+      <div className="absolute top-6 right-6 z-20 flex items-center space-x-2">
+        <InstallAppButton />
         <ThemeToggle />
       </div>
 
