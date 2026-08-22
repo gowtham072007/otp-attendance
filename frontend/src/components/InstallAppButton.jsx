@@ -53,7 +53,7 @@ const InstallAppButton = () => {
       className="flex items-center space-x-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 px-3 py-2 rounded-xl text-xs font-bold font-mono transition-all shadow-xs active:scale-95 group"
     >
       <img 
-        src="/logo-transparent.png" 
+        src="/favicon.svg" 
         alt="Logo" 
         className="w-4 h-4 object-contain group-hover:scale-110 transition-transform" 
       />
