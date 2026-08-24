@@ -1,3 +1,5 @@
+import os
+import math
 from typing import Optional
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,6 +11,23 @@ from ..schemas import AttendanceSubmission
 from ..auth.utils import get_current_user
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
+
+# --- Geofence Configuration ---
+TARGET_LATITUDE = float(os.getenv("TARGET_LATITUDE", "8.732309"))
+TARGET_LONGITUDE = float(os.getenv("TARGET_LONGITUDE", "77.723764"))
+GEOFENCE_RADIUS_METERS = float(os.getenv("GEOFENCE_RADIUS_METERS", "100.0"))
+
+def calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate the great-circle distance between two points on the Earth using Haversine formula."""
+    R = 6371000.0  # Earth's radius in meters
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    
+    a = math.sin(delta_phi / 2.0)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0)**2
+    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    return R * c
 
 # --- Indian Standard Time (IST) Helpers ---
 IST = timezone(timedelta(hours=5, minutes=30), name="IST")
@@ -70,7 +89,12 @@ def get_session_status(db: Session = Depends(get_db), current_user: User = Depen
             "date": format_ist_date(my_record.timestamp),
             "status": my_record.status,
             "session": f"Session {target_session.id:02d}"
-        } if my_record else None
+        } if my_record else None,
+        "target_location": {
+            "latitude": TARGET_LATITUDE,
+            "longitude": TARGET_LONGITUDE,
+            "radius_meters": GEOFENCE_RADIUS_METERS
+        }
     }
 
 
@@ -80,6 +104,24 @@ def mark_attendance(submission: AttendanceSubmission, db: Session = Depends(get_
     active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
     if not active_session:
         raise HTTPException(status_code=400, detail="No active attendance session.")
+
+    # Geofence location verification
+    if submission.latitude is None or submission.longitude is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Location required. Please allow GPS access in your browser to verify you are inside the attendance venue."
+        )
+
+    distance = calculate_distance_meters(
+        submission.latitude, submission.longitude,
+        TARGET_LATITUDE, TARGET_LONGITUDE
+    )
+
+    if distance > GEOFENCE_RADIUS_METERS:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Location verification failed: You are outside the attendance zone (~{int(distance)}m away). You must be within {int(GEOFENCE_RADIUS_METERS)}m of the venue."
+        )
     
     # Find matching OTP for the session
     otp_record = db.query(OTP).filter(
@@ -121,7 +163,8 @@ def mark_attendance(submission: AttendanceSubmission, db: Session = Depends(get_
         "email": current_user.email,
         "date": format_ist_date(new_attendance.timestamp),
         "time": format_ist_time(new_attendance.timestamp),
-        "status": new_attendance.status
+        "status": new_attendance.status,
+        "distance_meters": round(distance, 1)
     }
 
 @router.get("/my-history")

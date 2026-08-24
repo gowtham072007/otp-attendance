@@ -1,8 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import api from '../services/api';
-import { LogOut, CheckCircle, AlertCircle, History, Clock, Lock, Radio, UserCheck, UserX } from 'lucide-react';
+import { 
+  LogOut, 
+  CheckCircle, 
+  AlertCircle, 
+  History, 
+  Clock, 
+  Lock, 
+  Radio, 
+  UserCheck, 
+  UserX, 
+  MapPin, 
+  Navigation, 
+  RefreshCw, 
+  AlertTriangle, 
+  ShieldCheck, 
+  ShieldAlert, 
+  LocateFixed 
+} from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
+
+const DEFAULT_TARGET_LAT = 8.732309;
+const DEFAULT_TARGET_LNG = 77.723764;
+const DEFAULT_GEOFENCE_RADIUS = 100; // in meters
+
+// Haversine distance formula to calculate distance in meters
+const calculateDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+  const R = 6371000; // Earth's radius in meters
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
 
 const UserDashboard = () => {
   const { user, logout } = useAuth();
@@ -15,9 +51,91 @@ const UserDashboard = () => {
     active_session: null,
     today_session: null,
     already_marked: false,
-    my_record: null
+    my_record: null,
+    target_location: {
+      latitude: DEFAULT_TARGET_LAT,
+      longitude: DEFAULT_TARGET_LNG,
+      radius_meters: DEFAULT_GEOFENCE_RADIUS
+    }
   });
+
+  // Geolocation States
+  const [coords, setCoords] = useState(null);
+  const [distance, setDistance] = useState(null);
+  const [locState, setLocState] = useState('IDLE'); // 'IDLE' | 'ACQUIRING' | 'INSIDE' | 'OUTSIDE' | 'DENIED' | 'UNAVAILABLE' | 'ERROR'
+  const [locError, setLocError] = useState('');
+  const [refreshingLoc, setRefreshingLoc] = useState(false);
+
   const inputRefs = [React.useRef(), React.useRef(), React.useRef(), React.useRef(), React.useRef(), React.useRef()];
+
+  const targetLat = sessionStatus.target_location?.latitude ?? DEFAULT_TARGET_LAT;
+  const targetLng = sessionStatus.target_location?.longitude ?? DEFAULT_TARGET_LNG;
+  const targetRadius = sessionStatus.target_location?.radius_meters ?? DEFAULT_GEOFENCE_RADIUS;
+
+  const isActiveSession = Boolean(sessionStatus.active_session);
+  const isAlreadyMarked = sessionStatus.already_marked;
+  const isTodayCompleted = !isActiveSession && Boolean(sessionStatus.today_session && sessionStatus.today_session.status === 'CLOSED');
+  const isNoSession = !isActiveSession && !sessionStatus.today_session;
+
+  const isInside = locState === 'INSIDE';
+
+  // Request high-accuracy GPS coordinates
+  const checkLocation = useCallback((isManual = false) => {
+    if (!navigator.geolocation) {
+      setLocState('UNAVAILABLE');
+      setLocError('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    if (isManual) {
+      setRefreshingLoc(true);
+    } else {
+      setLocState((prev) => (prev === 'IDLE' ? 'ACQUIRING' : prev));
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const userLat = position.coords.latitude;
+        const userLng = position.coords.longitude;
+        const accuracy = position.coords.accuracy;
+        
+        setCoords({ latitude: userLat, longitude: userLng, accuracy });
+
+        const dist = calculateDistanceInMeters(userLat, userLng, targetLat, targetLng);
+        setDistance(dist);
+
+        if (dist <= targetRadius) {
+          setLocState('INSIDE');
+          setLocError('');
+        } else {
+          setLocState('OUTSIDE');
+          setLocError(`You are ~${Math.round(dist)}m away from the venue. Please move inside to enter the OTP.`);
+        }
+        setRefreshingLoc(false);
+      },
+      (error) => {
+        setRefreshingLoc(false);
+        if (error.code === error.PERMISSION_DENIED) {
+          setLocState('DENIED');
+          setLocError('Location permission denied. Please enable GPS permissions in your browser settings to verify attendance.');
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          setLocState('UNAVAILABLE');
+          setLocError('Location signal unavailable. Please ensure your device GPS is turned on.');
+        } else if (error.code === error.TIMEOUT) {
+          setLocState('ERROR');
+          setLocError('Location request timed out. Please click "Refresh Location" to try again.');
+        } else {
+          setLocState('ERROR');
+          setLocError(error.message || 'Unable to retrieve your location.');
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    );
+  }, [targetLat, targetLng, targetRadius]);
 
   const fetchSessionStatus = async () => {
     try {
@@ -27,7 +145,12 @@ const UserDashboard = () => {
         active_session: res.data.active_session,
         today_session: res.data.today_session,
         already_marked: res.data.already_marked,
-        my_record: res.data.my_record
+        my_record: res.data.my_record,
+        target_location: res.data.target_location || {
+          latitude: DEFAULT_TARGET_LAT,
+          longitude: DEFAULT_TARGET_LNG,
+          radius_meters: DEFAULT_GEOFENCE_RADIUS
+        }
       });
     } catch (err) {
       console.error("Failed to fetch session status", err);
@@ -55,7 +178,16 @@ const UserDashboard = () => {
     return () => clearInterval(timer);
   }, []);
 
+  // Proactively check location when there is an active session and attendance isn't marked
+  useEffect(() => {
+    if (isActiveSession && !isAlreadyMarked) {
+      checkLocation();
+    }
+  }, [isActiveSession, isAlreadyMarked, checkLocation]);
+
   const handleChange = (index, e) => {
+    if (!isInside) return;
+
     const value = e.target.value;
     if (isNaN(value)) return;
 
@@ -82,12 +214,18 @@ const UserDashboard = () => {
   };
 
   const handleKeyDown = (index, e) => {
+    if (!isInside) return;
     if (e.key === 'Backspace' && otp[index] === '' && index > 0) {
       inputRefs[index - 1].current.focus();
     }
   };
 
   const submitAttendance = async () => {
+    if (!isInside) {
+      setStatus({ type: 'error', message: 'You must be inside the attendance venue to submit attendance.' });
+      return;
+    }
+
     const otpCode = otp.join('');
     if (otpCode.length !== 6) {
       setStatus({ type: 'error', message: 'Please enter the full 6-digit OTP.' });
@@ -98,7 +236,11 @@ const UserDashboard = () => {
     setStatus({ type: '', message: '' });
     
     try {
-      const res = await api.post('/attendance/mark', { otp_code: otpCode });
+      const res = await api.post('/attendance/mark', { 
+        otp_code: otpCode,
+        latitude: coords?.latitude,
+        longitude: coords?.longitude
+      });
       setStatus({ type: 'success', message: res.data.message });
       setOtp(['', '', '', '', '', '']);
       await fetchSessionStatus();
@@ -112,12 +254,6 @@ const UserDashboard = () => {
       setSubmitting(false);
     }
   };
-
-  const isActiveSession = Boolean(sessionStatus.active_session);
-  const isAlreadyMarked = sessionStatus.already_marked;
-  const isTodayCompleted = !isActiveSession && Boolean(sessionStatus.today_session && sessionStatus.today_session.status === 'CLOSED');
-  const isNoSession = !isActiveSession && !sessionStatus.today_session;
-
 
   return (
     <div className="min-h-screen bg-[#fafafa] dark:bg-[#09090b] bg-grid-pattern font-sans text-zinc-900 dark:text-zinc-100 flex flex-col transition-colors duration-200">
@@ -155,37 +291,152 @@ const UserDashboard = () => {
               </div>
             )}
 
-            {/* CASE 1: Active Session & User has NOT marked attendance -> SHOW OTP INPUTS */}
+            {/* CASE 1: Active Session & User has NOT marked attendance -> SHOW OTP INPUTS GATED BY LOCATION */}
             {isActiveSession && !isAlreadyMarked && (
               <div>
-                <div className="inline-flex items-center space-x-2 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-800 dark:text-emerald-300 text-[11px] font-mono uppercase tracking-wider rounded-full mb-3">
-                  <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                  <span>Session #{sessionStatus.active_session.id} Active</span>
-                </div>
-                <h2 className="text-2xl font-black text-black dark:text-white tracking-tight mb-1">Enter Active OTP</h2>
-                <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-8">Enter the 6-digit dynamic passcode displayed on the screen.</p>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                  <div className="inline-flex items-center space-x-2 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-800 dark:text-emerald-300 text-[11px] font-mono uppercase tracking-wider rounded-full">
+                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                    <span>Session #{sessionStatus.active_session.id} Active</span>
+                  </div>
 
-                <div className="flex justify-center gap-2 sm:gap-3.5 mb-8">
-                  {otp.map((digit, index) => (
-                    <input
-                      key={index}
-                      ref={inputRefs[index]}
-                      type="text"
-                      maxLength={6}
-                      value={digit}
-                      onChange={(e) => handleChange(index, e)}
-                      onKeyDown={(e) => handleKeyDown(index, e)}
-                      className="w-12 h-14 sm:w-14 sm:h-18 text-center text-2xl sm:text-3xl font-black font-mono rounded-2xl border-2 border-zinc-200 dark:border-zinc-700 bg-zinc-50/70 dark:bg-zinc-950/60 text-zinc-900 dark:text-white focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800 transition-all outline-none"
-                    />
-                  ))}
+                  {/* Geofence Status Pill */}
+                  {isInside ? (
+                    <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 text-[11px] font-mono font-semibold rounded-full shadow-2xs">
+                      <ShieldCheck size={13} className="text-emerald-600 dark:text-emerald-400" />
+                      <span>Inside Venue ({distance !== null ? `~${Math.round(distance)}m` : 'Verified'})</span>
+                    </div>
+                  ) : locState === 'ACQUIRING' ? (
+                    <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-sky-50 dark:bg-sky-950/70 border border-sky-300 dark:border-sky-700 text-sky-700 dark:text-sky-300 text-[11px] font-mono rounded-full">
+                      <LocateFixed size={13} className="animate-spin text-sky-600 dark:text-sky-400" />
+                      <span>Locating GPS...</span>
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-rose-50 dark:bg-rose-950/70 border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 text-[11px] font-mono font-semibold rounded-full">
+                      <ShieldAlert size={13} className="text-rose-600 dark:text-rose-400" />
+                      <span>Location Locked</span>
+                    </div>
+                  )}
+                </div>
+
+                <h2 className="text-2xl font-black text-black dark:text-white tracking-tight mb-1">Enter Active OTP</h2>
+                <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-6">Enter the 6-digit dynamic passcode displayed on the screen.</p>
+
+                {/* Location Status Banners & Warnings */}
+                {!isInside && (
+                  <div className="mb-6 p-4 rounded-2xl border bg-amber-50/80 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/60 text-amber-900 dark:text-amber-200 text-xs">
+                    <div className="flex items-start space-x-3">
+                      {locState === 'DENIED' || locState === 'UNAVAILABLE' || locState === 'ERROR' ? (
+                        <AlertTriangle size={18} className="shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                      ) : (
+                        <Navigation size={18} className="shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                      )}
+                      
+                      <div className="flex-1 space-y-1">
+                        <p className="font-bold text-[13px] tracking-tight">
+                          {locState === 'DENIED'
+                            ? 'Location Permission Required'
+                            : locState === 'OUTSIDE'
+                            ? 'You are Outside the Attendance Venue'
+                            : locState === 'ACQUIRING'
+                            ? 'Verifying Your Physical Location...'
+                            : 'Location Check Required'}
+                        </p>
+                        
+                        <p className="text-amber-800/90 dark:text-amber-300/90 leading-relaxed font-sans">
+                          {locState === 'DENIED'
+                            ? 'Please enable browser GPS / location permission to verify your presence at the venue.'
+                            : locState === 'OUTSIDE'
+                            ? `You are currently ~${distance ? Math.round(distance) : '?'} meters away. You must be physically inside the venue (within ${targetRadius}m) to unlock the OTP entry.`
+                            : locState === 'ACQUIRING'
+                            ? 'Checking your distance to the venue (Latitude: 8.732309, Longitude: 77.723764)...'
+                            : (locError || 'Checking location status...')}
+                        </p>
+
+                        <div className="pt-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => checkLocation(true)}
+                            disabled={refreshingLoc}
+                            className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-amber-200/70 hover:bg-amber-200 dark:bg-amber-900/70 dark:hover:bg-amber-900 text-amber-950 dark:text-amber-100 font-mono font-bold text-[11px] rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            <RefreshCw size={12} className={refreshingLoc ? 'animate-spin' : ''} />
+                            <span>{refreshingLoc ? 'Checking GPS...' : 'Refresh Location'}</span>
+                          </button>
+
+                          <span className="font-mono text-[10px] text-amber-700 dark:text-amber-400">
+                            Target: {targetLat.toFixed(6)}, {targetLng.toFixed(6)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Location Success Pill */}
+                {isInside && (
+                  <div className="mb-6 p-3.5 rounded-2xl border bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/60 text-emerald-900 dark:text-emerald-200 text-xs flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <MapPin size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span className="font-medium">
+                        Location verified! You are inside the venue (~{distance !== null ? `${Math.round(distance)}m` : '0m'} from center).
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => checkLocation(true)}
+                      disabled={refreshingLoc}
+                      title="Re-verify GPS"
+                      className="p-1 text-emerald-700 dark:text-emerald-300 hover:text-emerald-900 dark:hover:text-white transition-colors cursor-pointer"
+                    >
+                      <RefreshCw size={13} className={refreshingLoc ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
+                )}
+
+                {/* OTP Input Fields */}
+                <div className="relative">
+                  <div className={`flex justify-center gap-2 sm:gap-3.5 mb-8 transition-opacity duration-200 ${!isInside ? 'opacity-40 cursor-not-allowed select-none' : ''}`}>
+                    {otp.map((digit, index) => (
+                      <input
+                        key={index}
+                        ref={inputRefs[index]}
+                        type="text"
+                        maxLength={6}
+                        value={digit}
+                        disabled={!isInside || submitting}
+                        onChange={(e) => handleChange(index, e)}
+                        onKeyDown={(e) => handleKeyDown(index, e)}
+                        placeholder={!isInside ? '•' : ''}
+                        className={`w-12 h-14 sm:w-14 sm:h-18 text-center text-2xl sm:text-3xl font-black font-mono rounded-2xl border-2 transition-all outline-none ${
+                          isInside
+                            ? 'border-zinc-200 dark:border-zinc-700 bg-zinc-50/70 dark:bg-zinc-950/60 text-zinc-900 dark:text-white focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800'
+                            : 'border-zinc-200 dark:border-zinc-800 bg-zinc-100/60 dark:bg-zinc-950/30 text-zinc-400 dark:text-zinc-600 cursor-not-allowed'
+                        }`}
+                      />
+                    ))}
+                  </div>
+
+                  {!isInside && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="bg-zinc-900/80 dark:bg-zinc-100/90 text-white dark:text-black text-[11px] font-mono font-bold uppercase tracking-wider px-3.5 py-1.5 rounded-full shadow-lg backdrop-blur-xs flex items-center space-x-1.5">
+                        <Lock size={12} />
+                        <span>Move inside venue to unlock OTP</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <button
                   onClick={submitAttendance}
-                  disabled={submitting}
-                  className="w-full py-4 rounded-2xl font-bold text-sm tracking-wider uppercase font-mono shadow-md transition-all active:scale-[0.99] bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white disabled:bg-zinc-200 dark:disabled:bg-zinc-800 disabled:text-zinc-400 dark:disabled:text-zinc-600 disabled:cursor-not-allowed"
+                  disabled={!isInside || submitting || otp.join('').length !== 6}
+                  className="w-full py-4 rounded-2xl font-bold text-sm tracking-wider uppercase font-mono shadow-md transition-all active:scale-[0.99] bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white disabled:bg-zinc-200 dark:disabled:bg-zinc-800 disabled:text-zinc-400 dark:disabled:text-zinc-600 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  {submitting ? 'Verifying OTP...' : 'Submit Attendance'}
+                  {submitting 
+                    ? 'Verifying OTP...' 
+                    : !isInside 
+                    ? 'Locked (Outside Venue)' 
+                    : 'Submit Attendance'}
                 </button>
               </div>
             )}
@@ -321,4 +572,3 @@ const UserDashboard = () => {
 };
 
 export default UserDashboard;
-

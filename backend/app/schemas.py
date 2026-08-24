@@ -53,6 +53,8 @@ class AttendanceRecordResponse(BaseModel):
 
 class AttendanceSubmission(BaseModel):
     otp_code: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class AllowedEmailCreate(BaseModel):
     email: str
