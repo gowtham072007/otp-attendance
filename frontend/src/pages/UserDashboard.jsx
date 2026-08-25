@@ -23,7 +23,7 @@ import ThemeToggle from '../components/ThemeToggle';
 
 const DEFAULT_TARGET_LAT = 8.732309;
 const DEFAULT_TARGET_LNG = 77.723764;
-const DEFAULT_GEOFENCE_RADIUS = 100; // in meters
+const DEFAULT_GEOFENCE_RADIUS = 500; // in meters
 
 // Haversine distance formula to calculate distance in meters
 const calculateDistanceInMeters = (lat1, lon1, lat2, lon2) => {

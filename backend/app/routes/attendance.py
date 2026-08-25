@@ -15,7 +15,7 @@ router = APIRouter(prefix="/attendance", tags=["attendance"])
 # --- Geofence Configuration ---
 TARGET_LATITUDE = float(os.getenv("TARGET_LATITUDE", "8.732309"))
 TARGET_LONGITUDE = float(os.getenv("TARGET_LONGITUDE", "77.723764"))
-GEOFENCE_RADIUS_METERS = float(os.getenv("GEOFENCE_RADIUS_METERS", "100.0"))
+GEOFENCE_RADIUS_METERS = float(os.getenv("GEOFENCE_RADIUS_METERS", "500.0"))
 
 def calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate the great-circle distance between two points on the Earth using Haversine formula."""
