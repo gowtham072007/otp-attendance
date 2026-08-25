@@ -5,7 +5,7 @@ A modern, robust web application for managing student attendance using time-limi
 ## Features
 
 - **Email Whitelist & Access Control**: Admins can register and manage authorized student email IDs; only whitelisted emails can log in.
-- **Admin Dashboard**: Start/End sessions, generate secure 6-digit OTPs, view live attendance, manage authorized student email whitelist, and export data as CSV.
+- **Admin Dashboard**: Start/End sessions, generate secure 6-digit OTPs, view live attendance, manage authorized student email whitelist, export to Google Sheets (instant 1-click & live webhook sync), and export as CSV.
 - **Student Dashboard**: Mark attendance using the live OTP, view past attendance history.
 - **Security**: Time-limited OTPs, duplicate attendance prevention, and robust session validation.
 

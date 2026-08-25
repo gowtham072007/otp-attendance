@@ -22,9 +22,67 @@ import {
   UserCheck,
   UserX,
   Copy,
-  Calendar
+  Calendar,
+  FileSpreadsheet,
+  ExternalLink,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  Send,
+  CheckCircle2
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
+
+const APPS_SCRIPT_TEMPLATE = `function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sessionName = data.session_info ? ("Session " + data.session_info.id) : "Attendance";
+    var sheet = ss.getSheetByName(sessionName);
+    if (!sheet) {
+      sheet = ss.insertSheet(sessionName);
+    } else {
+      sheet.clear();
+    }
+    
+    // Header styling
+    var headers = ["Student Name", "Email", "Date (IST)", "Time (IST)", "Session", "Attendance Status"];
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length)
+      .setFontWeight("bold")
+      .setBackground("#1e293b")
+      .setFontColor("#ffffff");
+    
+    var records = data.records || [];
+    var rows = [];
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i];
+      rows.push([r.name, r.email, r.date, r.time, r.session, r.status]);
+    }
+    
+    if (rows.length > 0) {
+      var range = sheet.getRange(2, 1, rows.length, headers.length);
+      range.setValues(rows);
+      
+      for (var j = 0; j < rows.length; j++) {
+        var statusCell = sheet.getRange(j + 2, 6);
+        if (rows[j][5] === "Present") {
+          statusCell.setBackground("#dcfce7").setFontColor("#166534").setFontWeight("bold");
+        } else {
+          statusCell.setBackground("#fee2e2").setFontColor("#991b1b").setFontWeight("bold");
+        }
+      }
+    }
+    
+    sheet.autoResizeColumns(1, headers.length);
+    return ContentService.createTextOutput(JSON.stringify({ status: "success", synced_count: rows.length }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+};`;
 
 const parseExpiryTime = (dateStr) => {
   if (!dateStr) return 0;
@@ -83,6 +141,15 @@ const AdminDashboard = () => {
   const [todayCompleted, setTodayCompleted] = useState(false);
 
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Google Sheets state
+  const [showSheetsModal, setShowSheetsModal] = useState(false);
+  const [sheetsWebhookUrl, setSheetsWebhookUrl] = useState(() => localStorage.getItem('google_sheets_webhook_url') || '');
+  const [sheetsSyncLoading, setSheetsSyncLoading] = useState(false);
+  const [sheetsSyncStatus, setSheetsSyncStatus] = useState({ type: '', message: '' });
+  const [sheetsCopied, setSheetsCopied] = useState(false);
+  const [copiedScript, setCopiedScript] = useState(false);
+  const [showScriptGuide, setShowScriptGuide] = useState(false);
 
   // Whitelist state
   const [allowedEmails, setAllowedEmails] = useState([]);
@@ -289,6 +356,90 @@ const AdminDashboard = () => {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const handleOpenSheetsDirect = () => {
+    try {
+      const records = attendanceReport?.records || [];
+      if (records.length === 0) {
+        alert("No attendance records found to export.");
+        return;
+      }
+      const tsvHeader = ['Student Name', 'Email', 'Date (IST)', 'Time (IST)', 'Session', 'Attendance Status'].join('\t');
+      const tsvRows = records.map(r => [r.name, r.email, r.date, r.time, r.session, r.status].join('\t'));
+      const tsvContent = [tsvHeader, ...tsvRows].join('\n');
+      
+      navigator.clipboard.writeText(tsvContent).then(() => {
+        setSheetsCopied(true);
+        setTimeout(() => setSheetsCopied(false), 4000);
+        window.open('https://sheets.new', '_blank');
+      }).catch(() => {
+        window.open('https://sheets.new', '_blank');
+      });
+    } catch (err) {
+      console.error("Sheets export error:", err);
+    }
+  };
+
+  const handleCopySheetsDataOnly = () => {
+    try {
+      const records = attendanceReport?.records || [];
+      if (records.length === 0) {
+        alert("No attendance records found to export.");
+        return;
+      }
+      const tsvHeader = ['Student Name', 'Email', 'Date (IST)', 'Time (IST)', 'Session', 'Attendance Status'].join('\t');
+      const tsvRows = records.map(r => [r.name, r.email, r.date, r.time, r.session, r.status].join('\t'));
+      const tsvContent = [tsvHeader, ...tsvRows].join('\n');
+      
+      navigator.clipboard.writeText(tsvContent).then(() => {
+        setSheetsCopied(true);
+        setTimeout(() => setSheetsCopied(false), 4000);
+      });
+    } catch (err) {
+      console.error("Copy data error:", err);
+    }
+  };
+
+  const handleSyncToGoogleSheets = async () => {
+    const trimmedUrl = sheetsWebhookUrl.trim();
+    if (!trimmedUrl) {
+      setSheetsSyncStatus({
+        type: 'error',
+        message: 'Please enter your Google Apps Script Webhook URL.'
+      });
+      return;
+    }
+
+    try {
+      setSheetsSyncLoading(true);
+      setSheetsSyncStatus({ type: '', message: '' });
+      localStorage.setItem('google_sheets_webhook_url', trimmedUrl);
+      
+      const res = await api.post('/admin/session/attendance/sync-google-sheets', {
+        webhook_url: trimmedUrl,
+        session_id: selectedSessionId
+      });
+
+      setSheetsSyncStatus({
+        type: 'success',
+        message: res.data.message || 'Successfully synced with Google Sheets!'
+      });
+    } catch (err) {
+      setSheetsSyncStatus({
+        type: 'error',
+        message: err.response?.data?.detail || 'Failed to sync with Google Sheets. Please verify your Webhook URL.'
+      });
+    } finally {
+      setSheetsSyncLoading(false);
+    }
+  };
+
+  const handleCopyScriptCode = () => {
+    navigator.clipboard.writeText(APPS_SCRIPT_TEMPLATE).then(() => {
+      setCopiedScript(true);
+      setTimeout(() => setCopiedScript(false), 3000);
+    });
   };
 
   const handleDeleteAllAttendance = async () => {
@@ -982,6 +1133,18 @@ const AdminDashboard = () => {
                     )}
 
                     <button 
+                      onClick={() => {
+                        setShowSheetsModal(true);
+                        setSheetsSyncStatus({ type: '', message: '' });
+                      }}
+                      className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white px-4 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider"
+                      title="Export directly to Google Sheets or sync automatically"
+                    >
+                      <FileSpreadsheet size={14} />
+                      <span>Google Sheets</span>
+                    </button>
+
+                    <button 
                       onClick={handleExport} 
                       className="flex items-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white px-4 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider"
                     >
@@ -1327,6 +1490,190 @@ const AdminDashboard = () => {
         )}
 
       </div>
+
+      {/* Google Sheets Export / Sync Modal */}
+      {showSheetsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl transition-all">
+            
+            {/* Modal Header */}
+            <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between sticky top-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md z-10">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-xs">
+                  <FileSpreadsheet size={22} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg text-zinc-900 dark:text-zinc-100 flex items-center space-x-2">
+                    <span>Export to Google Sheets</span>
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800/60">
+                      Live
+                    </span>
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {selectedSessionId ? `Session #${selectedSessionId}` : 'Latest Session'} • {attendanceReport.records.length} records ready
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowSheetsModal(false)}
+                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Method 1: Instant Open in Google Sheets */}
+              <div className="p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700/60 space-y-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-mono font-bold text-xs flex items-center justify-center">1</span>
+                      <h4 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
+                        Instant 1-Click Open (sheets.new)
+                      </h4>
+                    </div>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 pl-8">
+                      Copies all attendance columns to your clipboard and opens a fresh Google Sheet. Press <kbd className="px-1.5 py-0.5 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded text-[10px] font-mono font-bold">Ctrl+V</kbd> (or <kbd className="px-1.5 py-0.5 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded text-[10px] font-mono font-bold">Cmd+V</kbd>) in cell <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">A1</span>.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2.5 pt-1 pl-8">
+                  <button
+                    onClick={handleOpenSheetsDirect}
+                    className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white px-4 py-2.5 rounded-xl font-mono font-bold text-xs shadow-xs transition"
+                  >
+                    <ExternalLink size={14} />
+                    <span>Open in Google Sheets</span>
+                  </button>
+
+                  <button
+                    onClick={handleCopySheetsDataOnly}
+                    className="flex items-center space-x-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 px-3.5 py-2.5 rounded-xl font-mono font-bold text-xs transition"
+                  >
+                    {sheetsCopied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                    <span>{sheetsCopied ? 'Copied Table!' : 'Copy Table Grid'}</span>
+                  </button>
+                </div>
+
+                {sheetsCopied && (
+                  <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 rounded-xl text-emerald-800 dark:text-emerald-300 text-xs font-mono flex items-center space-x-2 ml-8">
+                    <CheckCircle2 size={16} className="shrink-0" />
+                    <span>Data copied to clipboard! Paste into cell A1 of the newly opened Google Sheet.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Method 2: Direct Automated Sync via Webhook */}
+              <div className="p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700/60 space-y-4">
+                <div className="flex items-center space-x-2">
+                  <span className="w-6 h-6 rounded-full bg-zinc-800 dark:bg-zinc-700 text-white font-mono font-bold text-xs flex items-center justify-center">2</span>
+                  <h4 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
+                    Direct Cloud Sync (Google Apps Script Webhook)
+                  </h4>
+                </div>
+                <p className="text-xs text-zinc-600 dark:text-zinc-400 pl-8">
+                  Automatically sync this session's attendance directly into your designated Google Spreadsheet tab with color-coded rows.
+                </p>
+
+                <div className="space-y-3 pl-8">
+                  <div>
+                    <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1.5">
+                      Google Web App URL
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        placeholder="https://script.google.com/macros/s/.../exec"
+                        value={sheetsWebhookUrl}
+                        onChange={(e) => setSheetsWebhookUrl(e.target.value)}
+                        className="flex-1 px-3.5 py-2 text-xs rounded-xl bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 font-mono outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+                      />
+                      <button
+                        onClick={handleSyncToGoogleSheets}
+                        disabled={sheetsSyncLoading}
+                        className="flex items-center space-x-1.5 bg-zinc-900 hover:bg-black dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white px-4 py-2 rounded-xl font-mono font-bold text-xs shadow-xs transition disabled:opacity-50"
+                      >
+                        {sheetsSyncLoading ? (
+                          <RefreshCw size={13} className="animate-spin" />
+                        ) : (
+                          <Send size={13} />
+                        )}
+                        <span>{sheetsSyncLoading ? 'Syncing...' : 'Sync Now'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {sheetsSyncStatus.message && (
+                    <div className={`p-3 rounded-xl border text-xs font-mono flex items-start space-x-2 ${
+                      sheetsSyncStatus.type === 'success' 
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/80 text-emerald-800 dark:text-emerald-300' 
+                        : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/80 text-rose-800 dark:text-rose-300'
+                    }`}>
+                      {sheetsSyncStatus.type === 'success' ? (
+                        <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+                      ) : (
+                        <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                      )}
+                      <span>{sheetsSyncStatus.message}</span>
+                    </div>
+                  )}
+
+                  {/* Accordion: Apps Script Code & Setup */}
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowScriptGuide(!showScriptGuide)}
+                      className="flex items-center space-x-1 text-xs text-emerald-600 dark:text-emerald-400 hover:underline font-mono font-medium"
+                    >
+                      <span>{showScriptGuide ? 'Hide Setup Guide & Code' : '📖 View 30-Second Setup Guide & Script Code'}</span>
+                      {showScriptGuide ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+
+                    {showScriptGuide && (
+                      <div className="mt-3 p-4 rounded-xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-700/80 space-y-3 text-xs text-zinc-700 dark:text-zinc-300">
+                        <ol className="list-decimal list-inside space-y-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                          <li>Open your Google Sheet, click <strong className="text-zinc-900 dark:text-zinc-200">Extensions &gt; Apps Script</strong>.</li>
+                          <li>Delete any existing code, paste the script below, and save.</li>
+                          <li>Click <strong className="text-zinc-900 dark:text-zinc-200">Deploy &gt; New deployment</strong>, select type <strong className="text-zinc-900 dark:text-zinc-200">Web app</strong>.</li>
+                          <li>Set <strong className="text-zinc-900 dark:text-zinc-200">Execute as: Me</strong> and <strong className="text-zinc-900 dark:text-zinc-200">Who has access: Anyone</strong>.</li>
+                          <li>Click <strong className="text-zinc-900 dark:text-zinc-200">Deploy</strong>, copy the Web App URL, and paste it into the input above!</li>
+                        </ol>
+
+                        <div className="relative mt-2">
+                          <pre className="p-3 bg-zinc-950 text-emerald-400 font-mono text-[11px] rounded-lg overflow-x-auto max-h-48">
+                            <code>{APPS_SCRIPT_TEMPLATE}</code>
+                          </pre>
+                          <button
+                            onClick={handleCopyScriptCode}
+                            className="absolute top-2 right-2 flex items-center space-x-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2.5 py-1 rounded text-[11px] font-mono transition"
+                          >
+                            {copiedScript ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                            <span>{copiedScript ? 'Copied' : 'Copy Script'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 px-6 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 flex justify-end">
+              <button
+                onClick={() => setShowSheetsModal(false)}
+                className="px-4 py-2 rounded-xl bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-mono font-bold uppercase transition"
+              >
+                Close
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
