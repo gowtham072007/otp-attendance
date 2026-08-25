@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
 import { useNavigate } from 'react-router-dom';
+import { getDeviceId, getDeviceName } from '../utils/device';
 
 const AuthContext = createContext();
 
@@ -29,7 +30,14 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, fullName) => {
     try {
-      const response = await api.post('/auth/login', { email, full_name: fullName });
+      const deviceId = getDeviceId();
+      const deviceName = getDeviceName();
+      const response = await api.post('/auth/login', { 
+        email, 
+        full_name: fullName,
+        device_id: deviceId,
+        device_name: deviceName
+      });
       localStorage.setItem('token', response.data.access_token);
       
       const userData = response.data.user;

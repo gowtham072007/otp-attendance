@@ -8,10 +8,22 @@ class UserBase(BaseModel):
     picture: Optional[str] = None
     role: str
 
+class UserDeviceResponse(BaseModel):
+    id: int
+    device_id: str
+    device_name: Optional[str] = None
+    is_linked: bool = True
+    first_linked_at: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
 class UserResponse(UserBase):
     id: int
     google_id: str
     created_at: datetime
+    device: Optional[UserDeviceResponse] = None
     
     class Config:
         from_attributes = True
@@ -25,6 +37,8 @@ class Token(BaseModel):
 class DirectLoginRequest(BaseModel):
     email: str
     full_name: str
+    device_id: Optional[str] = None
+    device_name: Optional[str] = None
 
 class OTPSessionResponse(BaseModel):
     id: int
@@ -47,6 +61,9 @@ class AttendanceRecordResponse(BaseModel):
     user: UserResponse
     timestamp: datetime
     status: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    distance_meters: Optional[float] = None
     
     class Config:
         from_attributes = True
@@ -55,6 +72,23 @@ class AttendanceSubmission(BaseModel):
     otp_code: str
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+
+class GeofenceConfigResponse(BaseModel):
+    id: int
+    venue_name: str
+    latitude: float
+    longitude: float
+    radius_meters: float
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class GeofenceConfigUpdate(BaseModel):
+    venue_name: Optional[str] = "Francis Xavier Engineering College"
+    latitude: float
+    longitude: float
+    radius_meters: float = 500.0
 
 class AllowedEmailCreate(BaseModel):
     email: str

@@ -17,7 +17,8 @@ import {
   AlertTriangle, 
   ShieldCheck, 
   ShieldAlert, 
-  LocateFixed 
+  LocateFixed,
+  Smartphone
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -46,6 +47,7 @@ const UserDashboard = () => {
   const [history, setHistory] = useState([]);
   const [status, setStatus] = useState({ type: '', message: '' });
   const [submitting, setSubmitting] = useState(false);
+  const [currentISTTime, setCurrentISTTime] = useState('');
   const [sessionStatus, setSessionStatus] = useState({
     loading: true,
     active_session: null,
@@ -71,6 +73,7 @@ const UserDashboard = () => {
   const targetLat = sessionStatus.target_location?.latitude ?? DEFAULT_TARGET_LAT;
   const targetLng = sessionStatus.target_location?.longitude ?? DEFAULT_TARGET_LNG;
   const targetRadius = sessionStatus.target_location?.radius_meters ?? DEFAULT_GEOFENCE_RADIUS;
+  const venueName = sessionStatus.target_location?.venue_name || 'Francis Xavier Engineering College';
 
   const isActiveSession = Boolean(sessionStatus.active_session);
   const isAlreadyMarked = sessionStatus.already_marked;
@@ -166,6 +169,32 @@ const UserDashboard = () => {
     }
   };
 
+  // Live IST Clock
+  useEffect(() => {
+    const updateClock = () => {
+      const now = new Date();
+      const options = {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      };
+      try {
+        const formatter = new Intl.DateTimeFormat('en-GB', options);
+        setCurrentISTTime(formatter.format(now).replace(',', '') + ' IST');
+      } catch {
+        setCurrentISTTime(now.toLocaleTimeString() + ' IST');
+      }
+    };
+    updateClock();
+    const clockTimer = setInterval(updateClock, 1000);
+    return () => clearInterval(clockTimer);
+  }, []);
+
   useEffect(() => {
     fetchSessionStatus();
     fetchHistory();
@@ -260,13 +289,28 @@ const UserDashboard = () => {
       <nav className="bg-white/90 dark:bg-zinc-950/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 flex justify-between items-center sticky top-0 z-20 shadow-xs">
         <div className="flex items-center space-x-3">
           <div>
-            <h1 className="text-base font-black text-black dark:text-white tracking-tight">Hello, {user.full_name}</h1>
+            <div className="flex items-center space-x-2">
+              <h1 className="text-base font-black text-black dark:text-white tracking-tight">Hello, {user.full_name}</h1>
+              {user.device && (
+                <span className="hidden sm:inline-flex items-center space-x-1 px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800/90 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-[10px] font-mono rounded-md shadow-2xs" title={`Bound device: ${user.device.device_name}`}>
+                  <Smartphone size={11} className="text-zinc-500" />
+                  <span>{user.device.device_name || 'Linked Device'}</span>
+                </span>
+              )}
+            </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">{user.email}</p>
           </div>
         </div>
+
+        {/* Live IST Clock Header */}
+        <div className="hidden sm:flex items-center space-x-2 bg-zinc-100 dark:bg-zinc-900 px-3.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-700 dark:text-zinc-300">
+          <Clock size={14} className="text-zinc-500" />
+          <span className="font-bold">{currentISTTime}</span>
+        </div>
+
         <div className="flex items-center space-x-3">
           <ThemeToggle />
-          <button onClick={logout} className="flex items-center space-x-2 text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-4 py-2.5 rounded-xl text-xs font-bold font-mono uppercase tracking-wider shadow-xs">
+          <button onClick={logout} className="flex items-center space-x-2 text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-4 py-2.5 rounded-xl text-xs font-bold font-mono uppercase tracking-wider shadow-xs cursor-pointer">
             <LogOut size={16} />
             <span className="hidden sm:inline">Sign Out</span>
           </button>
@@ -274,6 +318,12 @@ const UserDashboard = () => {
       </nav>
 
       <main className="max-w-4xl mx-auto mt-8 p-4 w-full grid gap-8 md:grid-cols-5 flex-1">
+        
+        {/* Mobile Live IST Clock Banner */}
+        <div className="sm:hidden md:hidden col-span-full flex items-center justify-center space-x-2 bg-zinc-100 dark:bg-zinc-900 px-3.5 py-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-700 dark:text-zinc-300">
+          <Clock size={14} className="text-zinc-500" />
+          <span className="font-bold">{currentISTTime}</span>
+        </div>
         
         {/* Left Column - Attendance Status & OTP Check-in */}
         <div className="md:col-span-3 space-y-6">
@@ -349,7 +399,7 @@ const UserDashboard = () => {
                             : locState === 'OUTSIDE'
                             ? `You are currently ~${distance ? Math.round(distance) : '?'} meters away. You must be physically inside the venue (within ${targetRadius}m) to unlock the OTP entry.`
                             : locState === 'ACQUIRING'
-                            ? 'Checking your distance to the venue (Latitude: 8.732309, Longitude: 77.723764)...'
+                            ? `Checking your distance to ${venueName} (${targetLat.toFixed(4)}, ${targetLng.toFixed(4)})...`
                             : (locError || 'Checking location status...')}
                         </p>
 
@@ -462,7 +512,7 @@ const UserDashboard = () => {
 
                 {sessionStatus.my_record && (
                   <div className="bg-zinc-50 dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 px-5 py-3 rounded-2xl font-mono text-xs text-zinc-700 dark:text-zinc-300 space-y-1">
-                    <p><span className="text-zinc-400">Time (IST):</span> <strong>{sessionStatus.my_record.time}</strong></p>
+                    <p><span className="text-zinc-400">Time (IST):</span> <strong>{sessionStatus.my_record.time} IST</strong></p>
                     <p><span className="text-zinc-400">Date (IST):</span> <strong>{sessionStatus.my_record.date}</strong></p>
                   </div>
                 )}
@@ -486,7 +536,7 @@ const UserDashboard = () => {
                       Attendance Session Ended
                     </h2>
                     <p className="text-zinc-600 dark:text-zinc-300 text-sm max-w-sm mb-4">
-                      Today's session is closed. You were marked <strong className="text-emerald-600 dark:text-emerald-400">Present</strong> at {sessionStatus.my_record?.time || 'check-in'}.
+                      Today's session is closed. You were marked <strong className="text-emerald-600 dark:text-emerald-400">Present</strong> at {sessionStatus.my_record?.time ? `${sessionStatus.my_record.time} IST` : 'check-in'}.
                     </p>
                   </>
                 ) : (
@@ -538,7 +588,7 @@ const UserDashboard = () => {
           <div className="bg-white dark:bg-zinc-900/90 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 h-full flex flex-col overflow-hidden">
             <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 flex items-center space-x-2">
               <History className="text-zinc-600 dark:text-zinc-400" size={18} />
-              <h3 className="font-bold text-xs uppercase tracking-wider font-mono text-black dark:text-white">My Check-in Log</h3>
+              <h3 className="font-bold text-xs uppercase tracking-wider font-mono text-black dark:text-white">My Check-in Log (IST)</h3>
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -557,7 +607,7 @@ const UserDashboard = () => {
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-black text-white dark:bg-white dark:text-black mb-1">
                         {record.status}
                       </span>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">{record.time}</p>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">{record.time} IST</p>
                     </div>
                   </div>
                 ))

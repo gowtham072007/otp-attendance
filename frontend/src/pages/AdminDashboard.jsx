@@ -22,7 +22,14 @@ import {
   UserCheck,
   UserX,
   Copy,
-  Calendar
+  Calendar,
+  Smartphone,
+  RotateCcw,
+  MapPin,
+  LocateFixed,
+  Navigation,
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -83,6 +90,7 @@ const AdminDashboard = () => {
   const [todayCompleted, setTodayCompleted] = useState(false);
 
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deviceResetMsg, setDeviceResetMsg] = useState('');
 
   // Whitelist state
   const [allowedEmails, setAllowedEmails] = useState([]);
@@ -94,6 +102,20 @@ const AdminDashboard = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [whitelistSuccess, setWhitelistSuccess] = useState('');
   const [whitelistError, setWhitelistError] = useState('');
+
+  // Geofence & Location state
+  const [geofenceForm, setGeofenceForm] = useState({
+    venue_name: 'Francis Xavier Engineering College',
+    latitude: 8.732309,
+    longitude: 77.723764,
+    radius_meters: 500
+  });
+  const [geofenceLoading, setGeofenceLoading] = useState(false);
+  const [geofenceSaving, setGeofenceSaving] = useState(false);
+  const [geofenceSuccess, setGeofenceSuccess] = useState('');
+  const [geofenceError, setGeofenceError] = useState('');
+  const [locatingAdmin, setLocatingAdmin] = useState(false);
+  const [adminGpsAccuracy, setAdminGpsAccuracy] = useState(null);
 
   // Live IST Clock
   useEffect(() => {
@@ -180,13 +202,33 @@ const AdminDashboard = () => {
     }
   };
 
+  const fetchGeofence = async () => {
+    try {
+      setGeofenceLoading(true);
+      const res = await api.get('/admin/geofence');
+      if (res.data) {
+        setGeofenceForm({
+          venue_name: res.data.venue_name || 'Francis Xavier Engineering College',
+          latitude: res.data.latitude,
+          longitude: res.data.longitude,
+          radius_meters: res.data.radius_meters || 500
+        });
+      }
+    } catch (err) {
+      console.error("Failed to fetch geofence", err);
+    } finally {
+      setGeofenceLoading(false);
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
       await Promise.all([
         fetchCurrentSession(), 
         fetchAttendance(), 
         fetchAllSessions(),
-        fetchAllowedEmails()
+        fetchAllowedEmails(),
+        fetchGeofence()
       ]);
       setLoading(false);
     };
@@ -370,6 +412,104 @@ const AdminDashboard = () => {
     setTimeout(() => setCopiedAbsent(false), 3000);
   };
 
+  // Device Reset Actions
+  const handleResetDevice = async (userId, studentName) => {
+    if (!window.confirm(`Are you sure you want to reset the device binding for "${studentName}"?\n\nThis will allow the student to register and link a new device upon their next login.`)) {
+      return;
+    }
+    try {
+      const res = await api.post(`/admin/users/${userId}/reset-device`);
+      setDeviceResetMsg(res.data.message);
+      setTimeout(() => setDeviceResetMsg(''), 5000);
+      await fetchAttendance(selectedSessionId);
+    } catch (err) {
+      alert(err.response?.data?.detail || "Failed to reset device binding.");
+    }
+  };
+
+  const handleResetAllDevices = async () => {
+    if (!window.confirm("⚠️ Are you sure you want to RESET ALL student device bindings?\n\nAll students will be required to register their devices on their next login.")) {
+      return;
+    }
+    try {
+      const res = await api.post('/admin/devices/reset-all');
+      setDeviceResetMsg(res.data.message);
+      setTimeout(() => setDeviceResetMsg(''), 5000);
+      await fetchAttendance(selectedSessionId);
+    } catch (err) {
+      alert(err.response?.data?.detail || "Failed to reset all devices.");
+    }
+  };
+
+  // Location / Geofence Actions
+  const handleAcquireAdminGPS = () => {
+    if (!navigator.geolocation) {
+      setGeofenceError("Geolocation is not supported by your browser.");
+      return;
+    }
+    setLocatingAdmin(true);
+    setGeofenceError('');
+    setGeofenceSuccess('');
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = parseFloat(position.coords.latitude.toFixed(6));
+        const lng = parseFloat(position.coords.longitude.toFixed(6));
+        const acc = position.coords.accuracy ? Math.round(position.coords.accuracy) : null;
+        
+        setGeofenceForm((prev) => ({
+          ...prev,
+          latitude: lat,
+          longitude: lng
+        }));
+        setAdminGpsAccuracy(acc);
+        setLocatingAdmin(false);
+        setGeofenceSuccess(`Acquired GPS location: ${lat}, ${lng} (Accuracy: ~${acc || 0}m). Click "Save Venue Location" to activate.`);
+      },
+      (error) => {
+        setLocatingAdmin(false);
+        setGeofenceError(error.message || "Failed to acquire GPS location. Please allow browser location permissions.");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    );
+  };
+
+  const handleSaveGeofence = async (e) => {
+    e.preventDefault();
+    setGeofenceError('');
+    setGeofenceSuccess('');
+    
+    const lat = parseFloat(geofenceForm.latitude);
+    const lng = parseFloat(geofenceForm.longitude);
+    const rad = parseFloat(geofenceForm.radius_meters);
+
+    if (isNaN(lat) || isNaN(lng) || isNaN(rad)) {
+      setGeofenceError("Please enter valid numerical values for Latitude, Longitude, and Radius.");
+      return;
+    }
+
+    setGeofenceSaving(true);
+    try {
+      const res = await api.post('/admin/geofence', {
+        venue_name: geofenceForm.venue_name,
+        latitude: lat,
+        longitude: lng,
+        radius_meters: rad
+      });
+      setGeofenceSuccess(`Venue Location & Geofence saved for "${res.data.venue_name}"!`);
+      fetchAttendance(selectedSessionId);
+      setTimeout(() => setGeofenceSuccess(''), 5000);
+    } catch (err) {
+      setGeofenceError(err.response?.data?.detail || "Failed to save geofence configuration.");
+    } finally {
+      setGeofenceSaving(false);
+    }
+  };
+
   // Whitelist Actions
   const handleAddSingleEmail = async (e) => {
     e.preventDefault();
@@ -501,7 +641,7 @@ const AdminDashboard = () => {
         <div className="hidden sm:flex items-center bg-zinc-100 dark:bg-zinc-900 p-1 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-x-1">
           <button
             onClick={() => setActiveTab('session')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'session'
                 ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm'
                 : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
@@ -512,7 +652,7 @@ const AdminDashboard = () => {
           </button>
           <button
             onClick={() => setActiveTab('whitelist')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'whitelist'
                 ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm'
                 : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
@@ -524,13 +664,24 @@ const AdminDashboard = () => {
               {allowedEmails.length}
             </span>
           </button>
+          <button
+            onClick={() => setActiveTab('location')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'location'
+                ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm'
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
+            }`}
+          >
+            <MapPin size={14} className="text-rose-500" />
+            <span>Venue & Geofence</span>
+          </button>
         </div>
 
         <div className="flex items-center space-x-3">
           <ThemeToggle />
           <button 
             onClick={logout} 
-            className="flex items-center space-x-2 text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-4 py-2.5 rounded-xl text-xs font-bold font-mono uppercase tracking-wider shadow-xs"
+            className="flex items-center space-x-2 text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-4 py-2.5 rounded-xl text-xs font-bold font-mono uppercase tracking-wider shadow-xs cursor-pointer"
           >
             <LogOut size={16} />
             <span className="hidden sm:inline">Sign Out</span>
@@ -539,28 +690,39 @@ const AdminDashboard = () => {
       </nav>
 
       {/* Mobile Tab Switcher */}
-      <div className="sm:hidden px-6 pt-4 flex space-x-2">
+      <div className="sm:hidden px-6 pt-4 grid grid-cols-3 gap-1.5">
         <button
           onClick={() => setActiveTab('session')}
-          className={`flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 border ${
+          className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
             activeTab === 'session'
               ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
               : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
           }`}
         >
-          <Radio size={14} />
+          <Radio size={13} />
           <span>Sessions</span>
         </button>
         <button
           onClick={() => setActiveTab('whitelist')}
-          className={`flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 border ${
+          className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
             activeTab === 'whitelist'
               ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
               : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
           }`}
         >
-          <Mail size={14} />
-          <span>Allowed Emails ({allowedEmails.length})</span>
+          <Mail size={13} />
+          <span>Emails</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('location')}
+          className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
+            activeTab === 'location'
+              ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
+              : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
+          }`}
+        >
+          <MapPin size={13} className="text-rose-500" />
+          <span>Venue</span>
         </button>
       </div>
 
@@ -983,16 +1145,25 @@ const AdminDashboard = () => {
 
                     <button 
                       onClick={handleExport} 
-                      className="flex items-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white px-4 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider"
+                      className="flex items-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white px-4 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider cursor-pointer"
                     >
                       <Download size={14} />
                       <span>Export CSV (IST)</span>
                     </button>
 
                     <button 
+                      onClick={handleResetAllDevices} 
+                      className="flex items-center space-x-1.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider cursor-pointer"
+                      title="Reset device bindings for all students"
+                    >
+                      <Smartphone size={14} />
+                      <span>Reset All Devices</span>
+                    </button>
+
+                    <button 
                       onClick={handleDeleteAllAttendance}
                       disabled={deleteLoading}
-                      className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white px-4 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider disabled:opacity-50"
+                      className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white px-4 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider disabled:opacity-50 cursor-pointer"
                       title="Permanently delete all attendance records and sessions"
                     >
                       <Trash2 size={14} />
@@ -1001,13 +1172,21 @@ const AdminDashboard = () => {
                   </div>
                 </div>
 
+                {/* Device Reset Success Toast */}
+                {deviceResetMsg && (
+                  <div className="mx-6 mt-4 p-3 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-2xl text-xs font-semibold flex items-center space-x-2">
+                    <Check size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span>{deviceResetMsg}</span>
+                  </div>
+                )}
+
                 {/* Filter Tabs & Search Bar */}
                 <div className="px-6 py-3 border-b border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/30 dark:bg-zinc-900/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   {/* Status Pills */}
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => setAttendanceFilter('ALL')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition cursor-pointer ${
                         attendanceFilter === 'ALL'
                           ? 'bg-black text-white dark:bg-white dark:text-black shadow-xs'
                           : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white'
@@ -1017,7 +1196,7 @@ const AdminDashboard = () => {
                     </button>
                     <button
                       onClick={() => setAttendanceFilter('PRESENT')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition flex items-center space-x-1.5 ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition flex items-center space-x-1.5 cursor-pointer ${
                         attendanceFilter === 'PRESENT'
                           ? 'bg-emerald-600 text-white shadow-xs'
                           : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60'
@@ -1028,7 +1207,7 @@ const AdminDashboard = () => {
                     </button>
                     <button
                       onClick={() => setAttendanceFilter('ABSENT')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition flex items-center space-x-1.5 ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition flex items-center space-x-1.5 cursor-pointer ${
                         attendanceFilter === 'ABSENT'
                           ? 'bg-rose-600 text-white shadow-xs'
                           : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60'
@@ -1060,6 +1239,7 @@ const AdminDashboard = () => {
                         <th className="p-4 pl-6">Student</th>
                         <th className="p-4">Date (IST)</th>
                         <th className="p-4">Time (IST)</th>
+                        <th className="p-4">Device</th>
                         <th className="p-4">Session</th>
                         <th className="p-4">Status</th>
                         <th className="p-4 text-right pr-6">Action</th>
@@ -1068,7 +1248,7 @@ const AdminDashboard = () => {
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 text-sm">
                       {filteredAttendanceRecords.length === 0 ? (
                         <tr>
-                          <td colSpan="6" className="p-12 text-center text-zinc-400 dark:text-zinc-600 font-mono text-xs">
+                          <td colSpan="7" className="p-12 text-center text-zinc-400 dark:text-zinc-600 font-mono text-xs">
                             {attendanceSearch 
                               ? "No students match your search." 
                               : "No attendance records found for this session."}
@@ -1087,8 +1267,24 @@ const AdminDashboard = () => {
                               <div className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">{record.email}</div>
                             </td>
                             <td className="p-4 text-xs text-zinc-600 dark:text-zinc-400 font-mono">{record.date}</td>
-                            <td className="p-4 text-xs font-mono font-semibold text-zinc-700 dark:text-zinc-300">
-                              {record.time}
+                            <td className="p-4 text-xs font-mono">
+                              <div className="font-semibold text-zinc-700 dark:text-zinc-300">{record.time}</div>
+                              {record.distance_meters !== null && record.distance_meters !== undefined && (
+                                <div className="inline-flex items-center space-x-1 text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5" title={`GPS Coordinates: ${record.latitude || '—'}, ${record.longitude || '—'}`}>
+                                  <MapPin size={10} className="shrink-0" />
+                                  <span>~{Math.round(record.distance_meters)}m</span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-4">
+                              {record.device ? (
+                                <div className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700" title={`Bound on: ${record.device.first_linked_at || 'Registered'}\nLast login: ${record.device.last_login_at || '—'}`}>
+                                  <Smartphone size={12} className="text-zinc-500 shrink-0" />
+                                  <span className="truncate max-w-[130px]">{record.device.device_name}</span>
+                                </div>
+                              ) : (
+                                <span className="text-zinc-400 dark:text-zinc-600 text-xs font-mono">Unlinked</span>
+                              )}
                             </td>
                             <td className="p-4 text-xs">
                               <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 px-2 py-0.5 rounded font-mono font-medium">{record.session}</span>
@@ -1107,17 +1303,28 @@ const AdminDashboard = () => {
                               )}
                             </td>
                             <td className="p-4 text-right pr-6">
-                              {record.status === 'Present' && record.record_id ? (
-                                <button
-                                  onClick={() => handleDeleteSingleRecord(record.record_id, record.name)}
-                                  title="Delete this student's attendance record"
-                                  className="p-2 rounded-xl text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              ) : (
-                                <span className="text-zinc-300 dark:text-zinc-700 text-xs font-mono pr-2">—</span>
-                              )}
+                              <div className="flex items-center justify-end space-x-1">
+                                {record.user_id && record.device && (
+                                  <button
+                                    onClick={() => handleResetDevice(record.user_id, record.name)}
+                                    title={`Reset device binding for ${record.name} (allows login on a new device)`}
+                                    className="p-2 rounded-xl text-zinc-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition cursor-pointer"
+                                  >
+                                    <RotateCcw size={15} />
+                                  </button>
+                                )}
+                                {record.status === 'Present' && record.record_id ? (
+                                  <button
+                                    onClick={() => handleDeleteSingleRecord(record.record_id, record.name)}
+                                    title="Delete this student's attendance record"
+                                    className="p-2 rounded-xl text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                ) : (
+                                  !record.device && <span className="text-zinc-300 dark:text-zinc-700 text-xs font-mono pr-2">—</span>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -1326,10 +1533,307 @@ const AdminDashboard = () => {
           </div>
         )}
 
+        {/* TAB 3: Venue Location & Geofence GPS Access */}
+        {activeTab === 'location' && (
+          <div className="space-y-6">
+            
+            {/* Top Venue Banner */}
+            <div className="bg-gradient-to-r from-zinc-900 via-zinc-950 to-zinc-900 text-white rounded-3xl p-6 md:p-8 shadow-xl border border-zinc-800 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+              <div className="flex items-center space-x-4">
+                <div className="p-3.5 bg-rose-500/20 text-rose-400 rounded-2xl border border-rose-500/30 shrink-0">
+                  <MapPin size={30} className="animate-bounce" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2.5">
+                    <h2 className="text-xl md:text-2xl font-black tracking-tight">Venue & Geofence Control</h2>
+                    <span className="bg-rose-500/20 text-rose-300 text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-rose-500/30">
+                      LIVE GPS
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-1 max-w-xl">
+                    Configure the physical attendance perimeter. Students must be inside this zone to submit their OTP attendance.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <a
+                  href={`https://www.google.com/maps?q=${geofenceForm.latitude},${geofenceForm.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition shadow-xs cursor-pointer"
+                >
+                  <ExternalLink size={14} />
+                  <span>Preview in Google Maps</span>
+                </a>
+              </div>
+            </div>
+
+            {/* Main Geofence Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              
+              {/* Left Column: GPS Acquisition & Configuration Form */}
+              <div className="lg:col-span-2 space-y-6">
+                
+                {/* Status / Alert Messages */}
+                {geofenceSuccess && (
+                  <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 px-4 py-3 rounded-2xl text-xs font-semibold flex items-center space-x-2">
+                    <Check size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span>{geofenceSuccess}</span>
+                  </div>
+                )}
+
+                {geofenceError && (
+                  <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200 px-4 py-3 rounded-2xl text-xs font-semibold flex items-center space-x-2">
+                    <AlertCircle size={16} className="text-rose-600 dark:text-rose-400 shrink-0" />
+                    <span>{geofenceError}</span>
+                  </div>
+                )}
+
+                {/* 1-Click GPS Capture Action Card */}
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs relative overflow-hidden">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="font-bold text-base flex items-center space-x-2">
+                        <LocateFixed size={18} className="text-rose-500" />
+                        <span>Acquire Admin GPS Coordinates</span>
+                      </h3>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                        Use your device's built-in GPS sensor to set the venue location to wherever you are currently standing.
+                      </p>
+                      {adminGpsAccuracy !== null && (
+                        <div className="mt-2 text-xs font-mono text-emerald-600 dark:text-emerald-400 font-bold flex items-center space-x-1">
+                          <Check size={12} className="stroke-[3]" />
+                          <span>GPS Accuracy: ~{adminGpsAccuracy}m radius</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAcquireAdminGPS}
+                      disabled={locatingAdmin}
+                      className="flex items-center justify-center space-x-2 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white px-5 py-3 rounded-2xl font-mono text-xs font-bold tracking-wider uppercase transition shadow-md disabled:opacity-50 shrink-0 cursor-pointer"
+                    >
+                      {locatingAdmin ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                          <span>Acquiring GPS...</span>
+                        </>
+                      ) : (
+                        <>
+                          <LocateFixed size={16} />
+                          <span>Acquire My Location</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Geofence Form Card */}
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                  <form onSubmit={handleSaveGeofence} className="space-y-5">
+                    
+                    {/* Venue Name */}
+                    <div>
+                      <label className="block text-xs font-mono font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2">
+                        Venue / Campus Name
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={geofenceForm.venue_name}
+                        onChange={(e) => setGeofenceForm({ ...geofenceForm, venue_name: e.target.value })}
+                        placeholder="e.g. Francis Xavier Engineering College - Auditorium"
+                        className="w-full px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-rose-500 transition text-sm font-medium"
+                      />
+                    </div>
+
+                    {/* Coordinates Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-mono font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2">
+                          Latitude
+                        </label>
+                        <input
+                          type="number"
+                          step="any"
+                          required
+                          value={geofenceForm.latitude}
+                          onChange={(e) => setGeofenceForm({ ...geofenceForm, latitude: e.target.value })}
+                          placeholder="8.732309"
+                          className="w-full px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-rose-500 transition text-sm font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-mono font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2">
+                          Longitude
+                        </label>
+                        <input
+                          type="number"
+                          step="any"
+                          required
+                          value={geofenceForm.longitude}
+                          onChange={(e) => setGeofenceForm({ ...geofenceForm, longitude: e.target.value })}
+                          placeholder="77.723764"
+                          className="w-full px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-rose-500 transition text-sm font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Radius Slider & Presets */}
+                    <div className="space-y-3 pt-2">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                          Allowed Geofence Radius
+                        </label>
+                        <span className="px-3 py-1 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 rounded-xl text-xs font-mono font-bold border border-rose-200 dark:border-rose-800">
+                          {geofenceForm.radius_meters} meters
+                        </span>
+                      </div>
+
+                      <input
+                        type="range"
+                        min="20"
+                        max="1500"
+                        step="10"
+                        value={geofenceForm.radius_meters}
+                        onChange={(e) => setGeofenceForm({ ...geofenceForm, radius_meters: Number(e.target.value) })}
+                        className="w-full accent-rose-600 h-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg cursor-pointer"
+                      />
+
+                      {/* Quick Radius Preset Chips */}
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {[
+                          { label: '50m (Classroom / Lab)', value: 50 },
+                          { label: '100m (Department Wing)', value: 100 },
+                          { label: '250m (Academic Block)', value: 250 },
+                          { label: '500m (Campus Perimeter)', value: 500 },
+                          { label: '1000m (Extended Area)', value: 1000 }
+                        ].map((preset) => (
+                          <button
+                            key={preset.value}
+                            type="button"
+                            onClick={() => setGeofenceForm({ ...geofenceForm, radius_meters: preset.value })}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-mono transition cursor-pointer ${
+                              geofenceForm.radius_meters === preset.value
+                                ? 'bg-black text-white dark:bg-white dark:text-black font-bold shadow-xs'
+                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white border border-zinc-200 dark:border-zinc-700'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Submit Button */}
+                    <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={geofenceSaving}
+                        className="flex items-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white px-6 py-3.5 rounded-2xl font-mono text-xs font-bold tracking-wider uppercase transition shadow-md disabled:opacity-50 cursor-pointer"
+                      >
+                        {geofenceSaving ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent"></div>
+                            <span>Saving Changes...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check size={15} className="stroke-[3]" />
+                            <span>Save & Activate Venue Location</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+              </div>
+
+              {/* Right Column: Geofence Summary & Verification Details */}
+              <div className="space-y-6">
+                
+                {/* Active Parameters Card */}
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-4">
+                  <h3 className="font-bold text-sm uppercase font-mono tracking-wider text-zinc-500 dark:text-zinc-400 flex items-center space-x-2">
+                    <Navigation size={15} className="text-rose-500" />
+                    <span>Active Geofence Parameters</span>
+                  </h3>
+
+                  <div className="space-y-3 text-xs font-mono">
+                    <div className="flex justify-between items-center py-2 border-b border-zinc-100 dark:border-zinc-800/80">
+                      <span className="text-zinc-500">Venue Name</span>
+                      <span className="font-bold text-zinc-900 dark:text-zinc-100 text-right truncate max-w-[160px]">
+                        {geofenceForm.venue_name}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center py-2 border-b border-zinc-100 dark:border-zinc-800/80">
+                      <span className="text-zinc-500">Latitude</span>
+                      <span className="font-bold text-zinc-900 dark:text-zinc-100">{geofenceForm.latitude}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center py-2 border-b border-zinc-100 dark:border-zinc-800/80">
+                      <span className="text-zinc-500">Longitude</span>
+                      <span className="font-bold text-zinc-900 dark:text-zinc-100">{geofenceForm.longitude}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center py-2">
+                      <span className="text-zinc-500">Allowed Perimeter</span>
+                      <span className="font-bold text-rose-600 dark:text-rose-400">{geofenceForm.radius_meters}m</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Policy Explainer Card */}
+                <div className="bg-zinc-50 dark:bg-zinc-900/60 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-3">
+                  <h4 className="font-bold text-sm flex items-center space-x-2 text-zinc-900 dark:text-zinc-100">
+                    <ShieldCheck size={16} className="text-emerald-500" />
+                    <span>Zero-Trust Verification</span>
+                  </h4>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                    When students submit their attendance passcode, their mobile or laptop GPS coordinates are calculated against this center point using the Haversine great-circle formula.
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                    Students outside the <span className="font-bold font-mono text-zinc-800 dark:text-zinc-200">{geofenceForm.radius_meters}m</span> perimeter are automatically blocked with exact distance readouts.
+                  </p>
+                </div>
+
+                {/* Google Maps Shortcut Card */}
+                <div className="bg-gradient-to-br from-rose-50 to-orange-50 dark:from-rose-950/20 dark:to-orange-950/20 p-6 rounded-3xl border border-rose-200/60 dark:border-rose-900/40 shadow-xs space-y-3">
+                  <h4 className="font-bold text-sm text-rose-900 dark:text-rose-200 flex items-center space-x-2">
+                    <MapPin size={16} className="text-rose-600 dark:text-rose-400" />
+                    <span>External Maps Verification</span>
+                  </h4>
+                  <p className="text-xs text-rose-800/80 dark:text-rose-300/80 leading-relaxed">
+                    Click below to open these coordinates directly in Google Maps satellite view to verify the campus building or room boundaries.
+                  </p>
+                  <a
+                    href={`https://www.google.com/maps?q=${geofenceForm.latitude},${geofenceForm.longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center space-x-2 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-mono font-bold transition shadow-xs"
+                  >
+                    <ExternalLink size={13} />
+                    <span>Open Satellite View</span>
+                  </a>
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+        )}
+
       </div>
     </div>
   );
 };
 
 export default AdminDashboard;
+
 

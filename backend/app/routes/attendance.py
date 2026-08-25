@@ -2,20 +2,15 @@ import os
 import math
 from typing import Optional
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from ..database import get_db
-from ..models import User, AttendanceSession, OTP, AttendanceRecord
+from ..models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig
 from ..schemas import AttendanceSubmission
 from ..auth.utils import get_current_user
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
-
-# --- Geofence Configuration ---
-TARGET_LATITUDE = float(os.getenv("TARGET_LATITUDE", "8.732309"))
-TARGET_LONGITUDE = float(os.getenv("TARGET_LONGITUDE", "77.723764"))
-GEOFENCE_RADIUS_METERS = float(os.getenv("GEOFENCE_RADIUS_METERS", "500.0"))
 
 def calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate the great-circle distance between two points on the Earth using Haversine formula."""
@@ -47,6 +42,20 @@ def format_ist_time(dt: Optional[datetime]) -> str:
     ist_dt = to_ist(dt)
     return ist_dt.strftime("%I:%M %p") if ist_dt else "—"
 
+def get_active_geofence(db: Session) -> GeofenceConfig:
+    config = db.query(GeofenceConfig).first()
+    if not config:
+        config = GeofenceConfig(
+            venue_name="Francis Xavier Engineering College",
+            latitude=float(os.getenv("TARGET_LATITUDE", "8.732309")),
+            longitude=float(os.getenv("TARGET_LONGITUDE", "77.723764")),
+            radius_meters=float(os.getenv("GEOFENCE_RADIUS_METERS", "500.0"))
+        )
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+    return config
+
 def get_today_session(db: Session) -> Optional[AttendanceSession]:
     now_ist = datetime.now(IST)
     start_of_day_ist = datetime(now_ist.year, now_ist.month, now_ist.day, 0, 0, 0, tzinfo=IST)
@@ -62,6 +71,7 @@ def get_today_session(db: Session) -> Optional[AttendanceSession]:
 def get_session_status(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
     today_session = get_today_session(db)
+    geofence = get_active_geofence(db)
     
     # Check if student marked attendance for active or today's session
     my_record = None
@@ -88,18 +98,29 @@ def get_session_status(db: Session = Depends(get_db), current_user: User = Depen
             "time": format_ist_time(my_record.timestamp),
             "date": format_ist_date(my_record.timestamp),
             "status": my_record.status,
+            "distance_meters": my_record.distance_meters,
             "session": f"Session {target_session.id:02d}"
         } if my_record else None,
         "target_location": {
-            "latitude": TARGET_LATITUDE,
-            "longitude": TARGET_LONGITUDE,
-            "radius_meters": GEOFENCE_RADIUS_METERS
+            "venue_name": geofence.venue_name,
+            "latitude": geofence.latitude,
+            "longitude": geofence.longitude,
+            "radius_meters": geofence.radius_meters
         }
     }
 
 
 @router.post("/mark")
-def mark_attendance(submission: AttendanceSubmission, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def mark_attendance(submission: AttendanceSubmission, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Device lock check
+    if current_user.role == "USER" and current_user.device:
+        client_device_id = request.headers.get("X-Device-Id")
+        if client_device_id and current_user.device.device_id != client_device_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Device Mismatch: Attendance must be submitted from your registered device."
+            )
+
     # Find active session
     active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
     if not active_session:
@@ -112,15 +133,17 @@ def mark_attendance(submission: AttendanceSubmission, db: Session = Depends(get_
             detail="Location required. Please allow GPS access in your browser to verify you are inside the attendance venue."
         )
 
+    geofence = get_active_geofence(db)
+
     distance = calculate_distance_meters(
         submission.latitude, submission.longitude,
-        TARGET_LATITUDE, TARGET_LONGITUDE
+        geofence.latitude, geofence.longitude
     )
 
-    if distance > GEOFENCE_RADIUS_METERS:
+    if distance > geofence.radius_meters:
         raise HTTPException(
             status_code=403,
-            detail=f"Location verification failed: You are outside the attendance zone (~{int(distance)}m away). You must be within {int(GEOFENCE_RADIUS_METERS)}m of the venue."
+            detail=f"Location verification failed: You are outside the attendance zone (~{int(distance)}m away from {geofence.venue_name}). You must be within {int(geofence.radius_meters)}m of the venue."
         )
     
     # Find matching OTP for the session
@@ -148,7 +171,10 @@ def mark_attendance(submission: AttendanceSubmission, db: Session = Depends(get_
         new_attendance = AttendanceRecord(
             session_id=active_session.id,
             user_id=current_user.id,
-            status="Present"
+            status="Present",
+            latitude=submission.latitude,
+            longitude=submission.longitude,
+            distance_meters=round(distance, 1)
         )
         db.add(new_attendance)
         db.commit()

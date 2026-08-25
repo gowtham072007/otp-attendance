@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { ShieldCheck, CalendarCheck, Clock, ArrowRight } from 'lucide-react';
+import { ShieldCheck, CalendarCheck, Clock, ArrowRight, ShieldAlert, AlertCircle, Smartphone } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 
 const Login = () => {
@@ -55,12 +55,16 @@ const Login = () => {
               <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 bg-black text-white dark:bg-white dark:text-black text-xs font-mono tracking-wider uppercase rounded-full w-fit shadow-xs">
                 <span>● Attendance OS</span>
               </div>
+              <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-[11px] font-mono rounded-full">
+                <Smartphone size={12} />
+                <span>1 Device = 1 User</span>
+              </div>
             </div>
             <h1 className="text-5xl font-black text-black dark:text-white tracking-tight leading-tight">
               Modern <span className="gradient-text">OTP-Based</span> Attendance
             </h1>
             <p className="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed">
-              Secure, fast, and reliable attendance tracking for modern classrooms and organizations.
+              Secure, fast, and reliable attendance tracking with strict device binding to eliminate proxy attendance.
             </p>
           </div>
           
@@ -69,14 +73,14 @@ const Login = () => {
               <div className="bg-zinc-100 dark:bg-zinc-800 p-2.5 rounded-xl text-black dark:text-white border border-zinc-200 dark:border-zinc-700"><Clock size={22} /></div>
               <div>
                 <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-sm">Time Limited</h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">OTPs expire automatically</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Live dynamic passcodes</p>
               </div>
             </div>
             <div className="flex items-start space-x-3.5 bg-white dark:bg-zinc-900/90 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm transition-all hover:border-zinc-400 dark:hover:border-zinc-700">
               <div className="bg-zinc-100 dark:bg-zinc-800 p-2.5 rounded-xl text-black dark:text-white border border-zinc-200 dark:border-zinc-700"><ShieldCheck size={22} /></div>
               <div>
-                <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-sm">Instant Access</h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">No passwords required</p>
+                <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-sm">Device Bound</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">1 account per device</p>
               </div>
             </div>
           </div>
@@ -84,13 +88,29 @@ const Login = () => {
 
         <div className="glass-panel p-8 md:p-10 rounded-3xl w-full max-w-md mx-auto border border-zinc-200/80 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/85 shadow-2xl">
           <div className="flex flex-col items-center mb-8 text-center">
-            <h2 className="text-2xl font-black text-black dark:text-white tracking-tight">Welcome Back</h2>
-            <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-1">Enter your details to continue.</p>
+            <h2 className="text-2xl font-black text-black dark:text-white tracking-tight">Student Check-in</h2>
+            <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-1">Enter your details from your registered device.</p>
           </div>
 
           {error && (
-            <div className="bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 px-4 py-3 rounded-xl mb-6 text-sm text-center font-medium">
-              {error}
+            <div className={`p-4 rounded-2xl mb-6 text-sm flex items-start space-x-3 text-left ${
+              error.includes('Device')
+                ? 'bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+                : 'bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100'
+            }`}>
+              {error.includes('Device') ? (
+                <ShieldAlert className="shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" size={18} />
+              ) : (
+                <AlertCircle className="shrink-0 mt-0.5 text-zinc-600 dark:text-zinc-400" size={18} />
+              )}
+              <div className="flex-1">
+                <p className="font-semibold text-xs leading-relaxed">{error}</p>
+                {error.includes('Device') && (
+                  <p className="mt-1.5 text-[11px] text-rose-700 dark:text-rose-300 font-mono">
+                    Policy: Strictly 1 student account per physical device.
+                  </p>
+                )}
+              </div>
             </div>
           )}
 

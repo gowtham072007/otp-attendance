@@ -8,14 +8,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+import os
 from ..database import get_db
-from ..models import User, AttendanceSession, OTP, AttendanceRecord, AllowedEmail
+from ..models import User, AttendanceSession, OTP, AttendanceRecord, AllowedEmail, UserDevice, GeofenceConfig
 from ..schemas import (
     OTPSessionResponse, 
     OTPResponse, 
     AllowedEmailCreate, 
     AllowedEmailBulkCreate, 
-    AllowedEmailResponse
+    AllowedEmailResponse,
+    GeofenceConfigResponse,
+    GeofenceConfigUpdate
 )
 from ..auth.utils import get_current_admin
 
@@ -44,6 +47,20 @@ def format_ist_time_short(dt: Optional[datetime]) -> str:
     ist_dt = to_ist(dt)
     return ist_dt.strftime("%I:%M %p") if ist_dt else "—"
 
+def get_active_geofence(db: Session) -> GeofenceConfig:
+    config = db.query(GeofenceConfig).first()
+    if not config:
+        config = GeofenceConfig(
+            venue_name="Francis Xavier Engineering College",
+            latitude=float(os.getenv("TARGET_LATITUDE", "8.732309")),
+            longitude=float(os.getenv("TARGET_LONGITUDE", "77.723764")),
+            radius_meters=float(os.getenv("GEOFENCE_RADIUS_METERS", "500.0"))
+        )
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+    return config
+
 def get_today_session(db: Session) -> Optional[AttendanceSession]:
     today_ist_str = datetime.now(IST).strftime("%d-%m-%Y")
     sessions = db.query(AttendanceSession).order_by(AttendanceSession.id.desc()).all()
@@ -55,6 +72,7 @@ def get_today_session(db: Session) -> Optional[AttendanceSession]:
 # --- Helper to calculate Present and Absent students for a session ---
 
 def compute_session_attendance(db: Session, session_id: Optional[int] = None):
+    geofence = get_active_geofence(db)
     if session_id:
         target_session = db.query(AttendanceSession).filter(AttendanceSession.id == session_id).first()
     else:
@@ -68,6 +86,12 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
     if not target_session:
         return {
             "session": None,
+            "geofence": {
+                "venue_name": geofence.venue_name,
+                "latitude": geofence.latitude,
+                "longitude": geofence.longitude,
+                "radius_meters": geofence.radius_meters
+            },
             "summary": {"total": 0, "present": 0, "absent": 0, "rate": "0%"},
             "records": [],
             "present_list": [],
@@ -118,6 +142,10 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
                     "user_id": r.user.id
                 }
 
+    # Get all active linked devices
+    devices = db.query(UserDevice).filter(UserDevice.is_linked == True).all()
+    device_by_user_id = {d.user_id: d for d in devices}
+
     records = []
     present_list = []
     absent_list = []
@@ -130,6 +158,16 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
         if user_id and user_id in present_user_ids:
             att_record = present_user_ids[user_id]
         
+        user_dev = device_by_user_id.get(user_id) if user_id else None
+        device_info = {
+            "id": user_dev.id,
+            "device_id": user_dev.device_id,
+            "device_name": user_dev.device_name or "Web Browser",
+            "is_linked": user_dev.is_linked,
+            "first_linked_at": format_ist_date(user_dev.first_linked_at),
+            "last_login_at": f"{format_ist_date(user_dev.last_login_at)}, {format_ist_time_short(user_dev.last_login_at)}" if user_dev.last_login_at else "—"
+        } if user_dev else None
+
         if att_record:
             present_count += 1
             item = {
@@ -141,7 +179,11 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
                 "date": format_ist_date(att_record.timestamp),
                 "time": format_ist_time(att_record.timestamp),
                 "session": f"Session {target_session.id:02d}",
-                "status": "Present"
+                "status": "Present",
+                "distance_meters": att_record.distance_meters,
+                "latitude": att_record.latitude,
+                "longitude": att_record.longitude,
+                "device": device_info
             }
             records.append(item)
             present_list.append(item)
@@ -156,7 +198,11 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
                 "date": format_ist_date(target_session.created_at),
                 "time": "—",
                 "session": f"Session {target_session.id:02d}",
-                "status": "Absent"
+                "status": "Absent",
+                "distance_meters": None,
+                "latitude": None,
+                "longitude": None,
+                "device": device_info
             }
             records.append(item)
             absent_list.append(item)
@@ -177,6 +223,12 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
             "created_at": to_ist(target_session.created_at).isoformat() if target_session.created_at else None,
             "formatted_date": format_ist_date(target_session.created_at),
             "formatted_time": format_ist_time(target_session.created_at)
+        },
+        "geofence": {
+            "venue_name": geofence.venue_name,
+            "latitude": geofence.latitude,
+            "longitude": geofence.longitude,
+            "radius_meters": geofence.radius_meters
         },
         "summary": {
             "total": total,
@@ -436,4 +488,51 @@ def delete_allowed_email(email_id: int, db: Session = Depends(get_db), admin: Us
     db.delete(record)
     db.commit()
     return {"message": "Allowed email removed successfully"}
+
+# --- Student Device Reset Endpoints ---
+
+@router.post("/users/{user_id}/reset-device")
+def reset_user_device(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Student user not found")
+    
+    device = db.query(UserDevice).filter(UserDevice.user_id == user_id).first()
+    if not device:
+        return {"message": f"No active device binding for {target_user.full_name}. Student can log in on any device."}
+    
+    db.delete(device)
+    db.commit()
+    return {
+        "message": f"Device binding reset successfully for {target_user.full_name} ({target_user.email}). The student can now link a new device upon their next login."
+    }
+
+@router.post("/devices/reset-all")
+def reset_all_devices(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    count = db.query(UserDevice).delete()
+    db.commit()
+    return {
+        "message": f"All student device bindings ({count} devices) have been reset. Students can link new devices on their next login."
+    }
+
+# --- Venue Geofence Configuration Endpoints ---
+
+@router.get("/geofence", response_model=GeofenceConfigResponse)
+def get_geofence_settings(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    return get_active_geofence(db)
+
+@router.post("/geofence", response_model=GeofenceConfigResponse)
+def update_geofence_settings(payload: GeofenceConfigUpdate, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    config = get_active_geofence(db)
+    if payload.venue_name:
+        config.venue_name = payload.venue_name.strip()
+    config.latitude = payload.latitude
+    config.longitude = payload.longitude
+    if payload.radius_meters > 0:
+        config.radius_meters = payload.radius_meters
+    config.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(config)
+    return config
+
 
