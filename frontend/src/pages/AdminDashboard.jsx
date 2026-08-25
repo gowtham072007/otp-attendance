@@ -19,20 +19,10 @@ import {
   Check, 
   AlertCircle,
   XCircle,
-  UserCheck, 
-  UserX, 
-  Copy, 
-  Calendar,
-  Smartphone,
-  ShieldAlert,
-  ShieldCheck,
-  KeyRound,
-  History,
-  RotateCcw,
-  Lock,
-  Unlock,
-  AlertTriangle,
-  SmartphoneNfc
+  UserCheck,
+  UserX,
+  Copy,
+  Calendar
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -104,29 +94,6 @@ const AdminDashboard = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [whitelistSuccess, setWhitelistSuccess] = useState('');
   const [whitelistError, setWhitelistError] = useState('');
-
-  // Device Management state
-  const [devicesList, setDevicesList] = useState([]);
-  const [devicesLoading, setDevicesLoading] = useState(false);
-  const [deviceStats, setDeviceStats] = useState({
-    total_users: 0,
-    linked_devices: 0,
-    unlinked_users: 0,
-    total_resets: 0,
-    blocked_attempts: 0
-  });
-  const [deviceSearch, setDeviceSearch] = useState('');
-  const [deviceStatusFilter, setDeviceStatusFilter] = useState('ALL'); // 'ALL' | 'LINKED' | 'UNLINKED' | 'DISABLED'
-  const [selectedUserForReset, setSelectedUserForReset] = useState(null);
-  const [resetReason, setResetReason] = useState('');
-  const [resettingDevice, setResettingDevice] = useState(false);
-  const [auditLogs, setAuditLogs] = useState([]);
-  const [auditLogsLoading, setAuditLogsLoading] = useState(false);
-  const [auditFilterAction, setAuditFilterAction] = useState('ALL');
-  const [passwordModalUser, setPasswordModalUser] = useState(null);
-  const [newPasswordInput, setNewPasswordInput] = useState('');
-  const [deviceSuccessMsg, setDeviceSuccessMsg] = useState('');
-  const [deviceErrorMsg, setDeviceErrorMsg] = useState('');
 
   // Live IST Clock
   useEffect(() => {
@@ -490,121 +457,15 @@ const AdminDashboard = () => {
     return item.email.toLowerCase().includes(q) || (item.name && item.name.toLowerCase().includes(q));
   });
 
-  // --- Device Management Fetchers & Handlers ---
-
-  const fetchDevices = async () => {
-    setDevicesLoading(true);
-    try {
-      const [devRes, statsRes] = await Promise.all([
-        api.get('/admin/devices'),
-        api.get('/admin/device-stats')
-      ]);
-      setDevicesList(devRes.data);
-      setDeviceStats(statsRes.data);
-    } catch (err) {
-      console.error("Failed to load devices", err);
-      setDeviceErrorMsg(err.response?.data?.detail || "Failed to load device list.");
-    } finally {
-      setDevicesLoading(false);
+  // Filtered Attendance Records (Present / Absent)
+  const filteredAttendanceRecords = attendanceReport.records.filter((rec) => {
+    if (attendanceFilter === 'PRESENT' && rec.status !== 'Present') return false;
+    if (attendanceFilter === 'ABSENT' && rec.status !== 'Absent') return false;
+    
+    if (attendanceSearch.trim()) {
+      const q = attendanceSearch.toLowerCase();
+      return rec.name.toLowerCase().includes(q) || rec.email.toLowerCase().includes(q);
     }
-  };
-
-  const fetchAuditLogs = async () => {
-    setAuditLogsLoading(true);
-    try {
-      const res = await api.get('/admin/device-audit-logs');
-      setAuditLogs(res.data);
-    } catch (err) {
-      console.error("Failed to load audit logs", err);
-    } finally {
-      setAuditLogsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (activeTab === 'devices') {
-      fetchDevices();
-      fetchAuditLogs();
-    }
-  }, [activeTab]);
-
-  const handleConfirmDeviceReset = async () => {
-    if (!selectedUserForReset) return;
-    setResettingDevice(true);
-    setDeviceErrorMsg('');
-    setDeviceSuccessMsg('');
-
-    try {
-      const res = await api.post(`/admin/devices/${selectedUserForReset.user_id}/reset`, {
-        reason: resetReason || "Admin initiated device reset."
-      });
-      setDeviceSuccessMsg(res.data.message || `Device unlinked for ${selectedUserForReset.full_name}.`);
-      setSelectedUserForReset(null);
-      setResetReason('');
-      fetchDevices();
-      fetchAuditLogs();
-      setTimeout(() => setDeviceSuccessMsg(''), 6000);
-    } catch (err) {
-      setDeviceErrorMsg(err.response?.data?.detail || "Failed to reset device.");
-    } finally {
-      setResettingDevice(false);
-    }
-  };
-
-  const handleToggleUserStatus = async (userId, currentActive, userName) => {
-    try {
-      const res = await api.post(`/admin/users/${userId}/toggle-status`);
-      setDeviceSuccessMsg(res.data.message || `Account status updated for ${userName}.`);
-      fetchDevices();
-      fetchAuditLogs();
-      setTimeout(() => setDeviceSuccessMsg(''), 5000);
-    } catch (err) {
-      setDeviceErrorMsg(err.response?.data?.detail || "Failed to update account status.");
-    }
-  };
-
-  const handleSetUserPassword = async (e) => {
-    e.preventDefault();
-    if (!passwordModalUser || !newPasswordInput) return;
-    if (newPasswordInput.length < 6) {
-      alert("Password must be at least 6 characters.");
-      return;
-    }
-
-    try {
-      await api.post(`/admin/users/${passwordModalUser.user_id}/set-password`, {
-        password: newPasswordInput
-      });
-      setDeviceSuccessMsg(`Password set successfully for ${passwordModalUser.full_name}.`);
-      setPasswordModalUser(null);
-      setNewPasswordInput('');
-      setTimeout(() => setDeviceSuccessMsg(''), 5000);
-    } catch (err) {
-      alert(err.response?.data?.detail || "Failed to update password.");
-    }
-  };
-
-  // Filtered Devices List
-  const filteredDevicesList = devicesList.filter((dev) => {
-    if (deviceStatusFilter === 'LINKED' && !dev.is_linked) return false;
-    if (deviceStatusFilter === 'UNLINKED' && dev.is_linked) return false;
-    if (deviceStatusFilter === 'DISABLED' && dev.is_active) return false;
-
-    if (deviceSearch.trim()) {
-      const q = deviceSearch.toLowerCase();
-      return (
-        dev.full_name.toLowerCase().includes(q) ||
-        dev.email.toLowerCase().includes(q) ||
-        (dev.device_name && dev.device_name.toLowerCase().includes(q)) ||
-        (dev.device_id && dev.device_id.toLowerCase().includes(q))
-      );
-    }
-    return true;
-  });
-
-  // Filtered Audit Logs
-  const filteredAuditLogs = auditLogs.filter((log) => {
-    if (auditFilterAction !== 'ALL' && log.action !== auditFilterAction) return false;
     return true;
   });
 
@@ -649,24 +510,6 @@ const AdminDashboard = () => {
             <Radio size={14} className={session ? "text-emerald-500 animate-pulse" : ""} />
             <span>Attendance & Sessions</span>
           </button>
-
-          <button
-            onClick={() => setActiveTab('devices')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeTab === 'devices'
-                ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm'
-                : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
-            }`}
-          >
-            <Smartphone size={14} />
-            <span>Device Management</span>
-            {deviceStats.blocked_attempts > 0 && (
-              <span className="ml-1 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 font-bold border border-red-200 dark:border-red-800">
-                {deviceStats.blocked_attempts}
-              </span>
-            )}
-          </button>
-
           <button
             onClick={() => setActiveTab('whitelist')}
             className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -699,7 +542,7 @@ const AdminDashboard = () => {
       <div className="sm:hidden px-6 pt-4 flex space-x-2">
         <button
           onClick={() => setActiveTab('session')}
-          className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border ${
+          className={`flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 border ${
             activeTab === 'session'
               ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
               : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
@@ -709,26 +552,15 @@ const AdminDashboard = () => {
           <span>Sessions</span>
         </button>
         <button
-          onClick={() => setActiveTab('devices')}
-          className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border ${
-            activeTab === 'devices'
-              ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
-              : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
-          }`}
-        >
-          <Smartphone size={14} />
-          <span>Devices</span>
-        </button>
-        <button
           onClick={() => setActiveTab('whitelist')}
-          className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border ${
+          className={`flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 border ${
             activeTab === 'whitelist'
               ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
               : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
           }`}
         >
           <Mail size={14} />
-          <span>Emails</span>
+          <span>Allowed Emails ({allowedEmails.length})</span>
         </button>
       </div>
 
@@ -1494,501 +1326,10 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* TAB 3: Device Management & Audit Logs */}
-        {activeTab === 'devices' && (
-          <div className="space-y-8">
-            
-            {/* Feedback Alerts */}
-            {deviceSuccessMsg && (
-              <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 px-5 py-3.5 rounded-2xl flex items-center justify-between text-sm shadow-xs font-medium">
-                <div className="flex items-center space-x-2.5">
-                  <CheckCircle size={18} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span>{deviceSuccessMsg}</span>
-                </div>
-                <button onClick={() => setDeviceSuccessMsg('')} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
-                  <XCircle size={16} />
-                </button>
-              </div>
-            )}
-
-            {deviceErrorMsg && (
-              <div className="bg-red-500/10 border border-red-500/30 text-red-800 dark:text-red-300 px-5 py-3.5 rounded-2xl flex items-center justify-between text-sm shadow-xs font-medium">
-                <div className="flex items-center space-x-2.5">
-                  <AlertCircle size={18} className="text-red-600 dark:text-red-400 shrink-0" />
-                  <span>{deviceErrorMsg}</span>
-                </div>
-                <button onClick={() => setDeviceErrorMsg('')} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
-                  <XCircle size={16} />
-                </button>
-              </div>
-            )}
-
-            {/* 4 Stat Summary Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white dark:bg-zinc-900 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center space-x-4">
-                <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-black dark:text-white">
-                  <Users size={22} />
-                </div>
-                <div>
-                  <p className="text-[11px] font-mono uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-bold">Total Students</p>
-                  <p className="text-2xl font-black text-black dark:text-white font-mono mt-0.5">{deviceStats.total_users}</p>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-zinc-900 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center space-x-4">
-                <div className="p-3 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-2xl border border-emerald-500/20">
-                  <Smartphone size={22} />
-                </div>
-                <div>
-                  <p className="text-[11px] font-mono uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-bold">Linked Devices</p>
-                  <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">{deviceStats.linked_devices}</p>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-zinc-900 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center space-x-4">
-                <div className="p-3 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-2xl border border-amber-500/20">
-                  <RotateCcw size={22} />
-                </div>
-                <div>
-                  <p className="text-[11px] font-mono uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-bold">Devices Reset</p>
-                  <p className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono mt-0.5">{deviceStats.total_resets}</p>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-zinc-900 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center space-x-4">
-                <div className="p-3 bg-red-500/10 text-red-600 dark:text-red-400 rounded-2xl border border-red-500/20">
-                  <ShieldAlert size={22} />
-                </div>
-                <div>
-                  <p className="text-[11px] font-mono uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-bold">Blocked Proxy</p>
-                  <p className="text-2xl font-black text-red-600 dark:text-red-400 font-mono mt-0.5">{deviceStats.blocked_attempts}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Main Devices Table Card */}
-            <div className="bg-white dark:bg-zinc-900/90 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-              
-              {/* Table Header Bar */}
-              <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-50/50 dark:bg-zinc-900/50">
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <h2 className="text-base font-black uppercase tracking-wider text-black dark:text-white">Registered Student Devices</h2>
-                    <span className="text-xs font-mono px-2 py-0.5 bg-zinc-200 dark:bg-zinc-700 rounded-full font-bold">
-                      {filteredDevicesList.length}
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    Strict 1 user account per device policy. Use "Reset Device" to allow student login from a new hardware.
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  {/* Status Filters */}
-                  <div className="flex items-center p-1 bg-zinc-100 dark:bg-zinc-950 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                    <button
-                      onClick={() => setDeviceStatusFilter('ALL')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                        deviceStatusFilter === 'ALL' ? 'bg-white dark:bg-zinc-800 shadow-xs text-black dark:text-white' : 'text-zinc-500'
-                      }`}
-                    >
-                      All ({devicesList.length})
-                    </button>
-                    <button
-                      onClick={() => setDeviceStatusFilter('LINKED')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                        deviceStatusFilter === 'LINKED' ? 'bg-white dark:bg-zinc-800 shadow-xs text-emerald-600 dark:text-emerald-400' : 'text-zinc-500'
-                      }`}
-                    >
-                      Linked ({deviceStats.linked_devices})
-                    </button>
-                    <button
-                      onClick={() => setDeviceStatusFilter('UNLINKED')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                        deviceStatusFilter === 'UNLINKED' ? 'bg-white dark:bg-zinc-800 shadow-xs text-amber-600 dark:text-amber-400' : 'text-zinc-500'
-                      }`}
-                    >
-                      Unlinked ({deviceStats.unlinked_users})
-                    </button>
-                  </div>
-
-                  {/* Search Bar */}
-                  <div className="relative w-full sm:w-64">
-                    <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-                    <input
-                      type="text"
-                      placeholder="Search student, email, device..."
-                      value={deviceSearch}
-                      onChange={(e) => setDeviceSearch(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-black dark:focus:border-white transition"
-                    />
-                  </div>
-
-                  <button
-                    onClick={() => { fetchDevices(); fetchAuditLogs(); }}
-                    className="p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition text-zinc-600 dark:text-zinc-300"
-                    title="Refresh device records"
-                  >
-                    <RefreshCw size={14} className={devicesLoading ? "animate-spin" : ""} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Table */}
-              <div className="overflow-x-auto max-h-[500px]">
-                <table className="w-full text-left border-collapse">
-                  <thead className="sticky top-0 z-10">
-                    <tr className="bg-zinc-100/95 dark:bg-zinc-950/95 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-mono uppercase tracking-wider text-zinc-600 dark:text-zinc-400 font-bold">
-                      <th className="p-4 pl-6">Student Info</th>
-                      <th className="p-4">Linked Device</th>
-                      <th className="p-4">Device ID Fingerprint</th>
-                      <th className="p-4">First Linked (IST)</th>
-                      <th className="p-4">Last Active (IST)</th>
-                      <th className="p-4">Binding Status</th>
-                      <th className="p-4 text-right pr-6">Admin Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 text-sm">
-                    {filteredDevicesList.length === 0 ? (
-                      <tr>
-                        <td colSpan="7" className="p-12 text-center text-zinc-400 dark:text-zinc-500 font-mono text-xs">
-                          {deviceSearch ? "No students matching your search." : "No registered student devices found."}
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredDevicesList.map((dev) => (
-                        <tr key={dev.user_id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
-                          <td className="p-4 pl-6">
-                            <div className="font-bold text-zinc-900 dark:text-zinc-100">{dev.full_name}</div>
-                            <div className="text-xs font-mono text-zinc-500 dark:text-zinc-400">{dev.email}</div>
-                            {dev.username && dev.username !== dev.email.split('@')[0] && (
-                              <div className="text-[11px] font-mono text-zinc-400">@{dev.username}</div>
-                            )}
-                          </td>
-
-                          <td className="p-4">
-                            {dev.is_linked && dev.device_name ? (
-                              <div className="flex items-center space-x-2">
-                                <Smartphone size={16} className="text-zinc-400 shrink-0" />
-                                <span className="font-medium text-xs text-zinc-800 dark:text-zinc-200">
-                                  {dev.device_name}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-zinc-400 dark:text-zinc-600 italic">No Device Linked</span>
-                            )}
-                          </td>
-
-                          <td className="p-4">
-                            {dev.is_linked && dev.device_id ? (
-                              <span className="font-mono text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-2 py-1 rounded-md border border-zinc-200 dark:border-zinc-700">
-                                {dev.device_id}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-zinc-400">—</span>
-                            )}
-                          </td>
-
-                          <td className="p-4 text-xs font-mono text-zinc-600 dark:text-zinc-400">
-                            {dev.first_linked_formatted}
-                          </td>
-
-                          <td className="p-4 text-xs font-mono text-zinc-600 dark:text-zinc-400">
-                            {dev.last_active_formatted}
-                          </td>
-
-                          <td className="p-4">
-                            {!dev.is_active ? (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-red-100 text-red-800 dark:bg-red-950/80 dark:text-red-300 border border-red-200 dark:border-red-800">
-                                Disabled
-                              </span>
-                            ) : dev.is_linked ? (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                ● Linked
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                                ○ Unlinked
-                              </span>
-                            )}
-                          </td>
-
-                          <td className="p-4 text-right pr-6">
-                            <div className="flex items-center justify-end space-x-1.5">
-                              {/* Reset Device Button */}
-                              {dev.is_linked && dev.role !== 'ADMIN' && (
-                                <button
-                                  onClick={() => {
-                                    setSelectedUserForReset(dev);
-                                    setResetReason('');
-                                  }}
-                                  title="Unlink and reset registered device"
-                                  className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 transition cursor-pointer"
-                                >
-                                  <RotateCcw size={13} />
-                                  <span>Reset Device</span>
-                                </button>
-                              )}
-
-                              {/* Toggle Active Button */}
-                              {dev.role !== 'ADMIN' && (
-                                <button
-                                  onClick={() => handleToggleUserStatus(dev.user_id, dev.is_active, dev.full_name)}
-                                  title={dev.is_active ? "Disable account" : "Enable account"}
-                                  className={`p-1.5 rounded-xl border transition ${
-                                    dev.is_active
-                                      ? "text-zinc-500 hover:text-red-600 border-zinc-200 dark:border-zinc-700 hover:bg-red-50 dark:hover:bg-red-950/30"
-                                      : "text-emerald-600 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40"
-                                  }`}
-                                >
-                                  {dev.is_active ? <Lock size={14} /> : <Unlock size={14} />}
-                                </button>
-                              )}
-
-                              {/* Set Password Button */}
-                              <button
-                                onClick={() => {
-                                  setPasswordModalUser(dev);
-                                  setNewPasswordInput('');
-                                }}
-                                title="Set or reset student password"
-                                className="p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
-                              >
-                                <KeyRound size={14} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Audit Log Trail Section */}
-            <div className="bg-white dark:bg-zinc-900/90 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-              <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-50/50 dark:bg-zinc-900/50">
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <History size={18} className="text-zinc-500" />
-                    <h2 className="text-base font-black uppercase tracking-wider text-black dark:text-white">Device Audit Log Trail</h2>
-                  </div>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    Immutable security log of device registrations, admin resets, and blocked mismatch attempts
-                  </p>
-                </div>
-
-                {/* Audit Action Filter */}
-                <div className="flex items-center space-x-2">
-                  <select
-                    value={auditFilterAction}
-                    onChange={(e) => setAuditFilterAction(e.target.value)}
-                    className="px-3 py-1.5 text-xs font-mono rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 outline-none"
-                  >
-                    <option value="ALL">All Actions</option>
-                    <option value="DEVICE_REGISTERED">Device Registered</option>
-                    <option value="DEVICE_RESET_BY_ADMIN">Admin Reset</option>
-                    <option value="LOGIN_BLOCKED_MISMATCH">Blocked Mismatches</option>
-                    <option value="LOGIN_SUCCESS">Login Success</option>
-                    <option value="ACCOUNT_STATUS_CHANGED">Status Changed</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="overflow-x-auto max-h-[400px]">
-                <table className="w-full text-left border-collapse">
-                  <thead className="sticky top-0 z-10">
-                    <tr className="bg-zinc-100/95 dark:bg-zinc-950/95 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-mono uppercase tracking-wider text-zinc-600 dark:text-zinc-400 font-bold">
-                      <th className="p-4 pl-6">Timestamp (IST)</th>
-                      <th className="p-4">Action</th>
-                      <th className="p-4">Target Student</th>
-                      <th className="p-4">Device Info</th>
-                      <th className="p-4 pr-6">Audit Details & Actor</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 text-xs font-mono">
-                    {filteredAuditLogs.length === 0 ? (
-                      <tr>
-                        <td colSpan="5" className="p-8 text-center text-zinc-400 dark:text-zinc-500">
-                          No audit entries recorded yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredAuditLogs.map((log) => {
-                        let badgeClass = "bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-300";
-                        if (log.action === "DEVICE_REGISTERED") {
-                          badgeClass = "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800";
-                        } else if (log.action === "DEVICE_RESET_BY_ADMIN") {
-                          badgeClass = "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800";
-                        } else if (log.action === "LOGIN_BLOCKED_MISMATCH") {
-                          badgeClass = "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300 border border-red-300 dark:border-red-800 font-black";
-                        } else if (log.action === "LOGIN_SUCCESS") {
-                          badgeClass = "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-300 dark:border-blue-800";
-                        }
-
-                        return (
-                          <tr key={log.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40">
-                            <td className="p-4 pl-6 text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
-                              {log.formatted_time}
-                            </td>
-                            <td className="p-4">
-                              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${badgeClass}`}>
-                                {log.action}
-                              </span>
-                            </td>
-                            <td className="p-4 font-sans font-medium text-zinc-900 dark:text-zinc-200">
-                              {log.user_name} <span className="text-zinc-400 text-xs font-mono">({log.user_email})</span>
-                            </td>
-                            <td className="p-4 text-zinc-700 dark:text-zinc-300">
-                              {log.device_name || log.device_id || "—"}
-                            </td>
-                            <td className="p-4 pr-6 text-zinc-600 dark:text-zinc-400 font-sans">
-                              <div>{log.details}</div>
-                              {log.admin_name && (
-                                <div className="text-[11px] text-zinc-400 font-mono mt-0.5">
-                                  Action by Admin: {log.admin_name}
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-          </div>
-        )}
-
-        {/* MODAL 1: Confirm Device Reset */}
-        {selectedUserForReset && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 max-w-lg w-full p-6 shadow-2xl space-y-5 animate-scaleUp">
-              <div className="flex items-start space-x-3.5">
-                <div className="p-3 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-2xl border border-amber-500/20 shrink-0">
-                  <AlertTriangle size={24} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-black dark:text-white tracking-tight">Confirm Device Reset</h3>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed">
-                    This will unlink the student's registered device. On their next login, their new device will be automatically linked to their account.
-                  </p>
-                </div>
-              </div>
-
-              {/* Target User Details Box */}
-              <div className="bg-zinc-100 dark:bg-zinc-950 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Student Name:</span>
-                  <span className="font-bold text-zinc-900 dark:text-zinc-100">{selectedUserForReset.full_name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Email:</span>
-                  <span className="font-mono text-zinc-900 dark:text-zinc-100">{selectedUserForReset.email}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Currently Linked Device:</span>
-                  <span className="font-medium text-amber-600 dark:text-amber-400">{selectedUserForReset.device_name || "Unknown Device"}</span>
-                </div>
-              </div>
-
-              {/* Reason Input */}
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1.5">
-                  Reset Reason / Justification (Recorded in Audit Log)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Student replaced phone / laptop, lost device, etc."
-                  value={resetReason}
-                  onChange={(e) => setResetReason(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-xs text-zinc-900 dark:text-white outline-none focus:border-black dark:focus:border-white transition"
-                />
-              </div>
-
-              <div className="flex items-center justify-end space-x-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedUserForReset(null)}
-                  disabled={resettingDevice}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmDeviceReset}
-                  disabled={resettingDevice}
-                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-lg shadow-amber-600/20 transition flex items-center space-x-1.5 cursor-pointer"
-                >
-                  <RotateCcw size={14} className={resettingDevice ? "animate-spin" : ""} />
-                  <span>{resettingDevice ? "Resetting..." : "Confirm & Unlink Device"}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL 2: Set Student Password */}
-        {passwordModalUser && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 max-w-md w-full p-6 shadow-2xl space-y-5 animate-scaleUp">
-              <div className="flex items-start space-x-3.5">
-                <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-black dark:text-white">
-                  <KeyRound size={22} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-black dark:text-white tracking-tight">Set Student Password</h3>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                    Assign a secure password for <strong>{passwordModalUser.full_name}</strong>.
-                  </p>
-                </div>
-              </div>
-
-              <form onSubmit={handleSetUserPassword} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1.5">
-                    New Password (Min 6 chars)
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    placeholder="Enter new password"
-                    value={newPasswordInput}
-                    onChange={(e) => setNewPasswordInput(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-xs text-zinc-900 dark:text-white outline-none focus:border-black dark:focus:border-white transition"
-                  />
-                </div>
-
-                <div className="flex items-center justify-end space-x-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setPasswordModalUser(null)}
-                    className="px-4 py-2.5 rounded-xl text-xs font-bold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2.5 rounded-xl text-xs font-bold bg-black text-white dark:bg-white dark:text-black shadow-lg transition"
-                  >
-                    Save Password
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
       </div>
     </div>
   );
 };
 
 export default AdminDashboard;
-
 
