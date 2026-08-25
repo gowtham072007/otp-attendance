@@ -18,7 +18,8 @@ from ..schemas import (
     AllowedEmailBulkCreate, 
     AllowedEmailResponse,
     GeofenceConfigResponse,
-    GeofenceConfigUpdate
+    GeofenceConfigUpdate,
+    ManualAttendanceRequest
 )
 from ..auth.utils import get_current_admin
 
@@ -414,11 +415,77 @@ def delete_single_attendance_record(record_id: int, db: Session = Depends(get_db
     
     db.delete(record)
     db.commit()
-    return {"message": "Attendance record deleted successfully"}
+@router.post("/attendance/manual-mark")
+def manual_mark_attendance(payload: ManualAttendanceRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    clean_email = payload.email.strip().lower()
+    if not clean_email or "@" not in clean_email or "." not in clean_email:
+        raise HTTPException(status_code=400, detail="A valid student email address is required.")
+    
+    # 1. Determine Target Session
+    if payload.session_id:
+        target_session = db.query(AttendanceSession).filter(AttendanceSession.id == payload.session_id).first()
+    else:
+        target_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
+        if not target_session:
+            target_session = get_today_session(db)
+        if not target_session:
+            target_session = db.query(AttendanceSession).order_by(AttendanceSession.id.desc()).first()
+            
+    if not target_session:
+        raise HTTPException(status_code=400, detail="No attendance session found. Please start or create a session first.")
+    
+    # 2. Find or Provision the Student User
+    user = db.query(User).filter(User.email.ilike(clean_email)).first()
+    if not user:
+        # Check AllowedEmail for display name or use payload.name or fallback to email username
+        allowed = db.query(AllowedEmail).filter(AllowedEmail.email.ilike(clean_email)).first()
+        full_name = payload.name.strip() if payload.name else (allowed.name if allowed and allowed.name else clean_email.split("@")[0].replace(".", " ").title())
+        import uuid
+        user = User(
+            email=clean_email,
+            full_name=full_name,
+            role="USER",
+            google_id=f"manual_{uuid.uuid4().hex[:12]}"
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
 
+    # 3. Create or Update AttendanceRecord
+    existing_record = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == target_session.id,
+        AttendanceRecord.user_id == user.id
+    ).first()
 
+    if existing_record:
+        existing_record.status = payload.status or "Present"
+        existing_record.timestamp = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(existing_record)
+        rec = existing_record
+    else:
+        rec = AttendanceRecord(
+            session_id=target_session.id,
+            user_id=user.id,
+            status=payload.status or "Present",
+            timestamp=datetime.now(timezone.utc),
+            distance_meters=0.0
+        )
+        db.add(rec)
+        db.commit()
+        db.refresh(rec)
 
-
+    return {
+        "message": f"Successfully marked {user.full_name} ({user.email}) as {rec.status} for Session #{target_session.id}.",
+        "record_id": rec.id,
+        "user_id": user.id,
+        "session_id": target_session.id,
+        "name": user.full_name,
+        "email": user.email,
+        "status": rec.status,
+        "date": format_ist_date(rec.timestamp),
+        "time": format_ist_time(rec.timestamp)
+    }
 
 @router.get("/allowed-emails", response_model=List[AllowedEmailResponse])
 def get_allowed_emails(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):

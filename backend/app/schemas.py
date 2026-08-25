@@ -106,3 +106,10 @@ class AllowedEmailResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class ManualAttendanceRequest(BaseModel):
+    email: str
+    name: Optional[str] = None
+    session_id: Optional[int] = None
+    status: Optional[str] = "Present"
+
+

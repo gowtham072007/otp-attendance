@@ -92,6 +92,13 @@ const AdminDashboard = () => {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deviceResetMsg, setDeviceResetMsg] = useState('');
 
+  // Manual Attendance Modal State
+  const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [manualEmail, setManualEmail] = useState('');
+  const [manualName, setManualName] = useState('');
+  const [manualSessionId, setManualSessionId] = useState(null);
+  const [manualLoading, setManualLoading] = useState(false);
+
   // Whitelist state
   const [allowedEmails, setAllowedEmails] = useState([]);
   const [newEmail, setNewEmail] = useState('');
@@ -507,6 +514,42 @@ const AdminDashboard = () => {
       setGeofenceError(err.response?.data?.detail || "Failed to save geofence configuration.");
     } finally {
       setGeofenceSaving(false);
+    }
+  };
+
+  // Manual Attendance Actions
+  const handleManualMark = async (email, name, sessionId = null) => {
+    try {
+      const targetSession = sessionId || selectedSessionId || (session ? session : null);
+      const res = await api.post('/admin/attendance/manual-mark', {
+        email,
+        name,
+        session_id: targetSession,
+        status: 'Present'
+      });
+      setDeviceResetMsg(res.data.message);
+      setTimeout(() => setDeviceResetMsg(''), 5000);
+      await fetchAttendance(selectedSessionId);
+      return true;
+    } catch (err) {
+      alert(err.response?.data?.detail || "Failed to record manual attendance.");
+      return false;
+    }
+  };
+
+  const handleManualFormSubmit = async (e) => {
+    e.preventDefault();
+    if (!manualEmail.trim()) {
+      alert("Please enter or select a student email.");
+      return;
+    }
+    setManualLoading(true);
+    const ok = await handleManualMark(manualEmail.trim(), manualName.trim() || undefined, manualSessionId);
+    setManualLoading(false);
+    if (ok) {
+      setManualModalOpen(false);
+      setManualEmail('');
+      setManualName('');
     }
   };
 
@@ -1152,6 +1195,20 @@ const AdminDashboard = () => {
                     </button>
 
                     <button 
+                      onClick={() => {
+                        setManualModalOpen(true);
+                        setManualEmail('');
+                        setManualName('');
+                        setManualSessionId(selectedSessionId || (attendanceReport.session ? attendanceReport.session.id : (session ? session : null)));
+                      }}
+                      className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider cursor-pointer"
+                      title="Manually mark attendance for a student"
+                    >
+                      <UserCheck size={14} />
+                      <span>Manual Check-in</span>
+                    </button>
+
+                    <button 
                       onClick={handleResetAllDevices} 
                       className="flex items-center space-x-1.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider cursor-pointer"
                       title="Reset device bindings for all students"
@@ -1303,7 +1360,17 @@ const AdminDashboard = () => {
                               )}
                             </td>
                             <td className="p-4 text-right pr-6">
-                              <div className="flex items-center justify-end space-x-1">
+                              <div className="flex items-center justify-end space-x-1.5">
+                                {record.status === 'Absent' && (
+                                  <button
+                                    onClick={() => handleManualMark(record.email, record.name, selectedSessionId || (attendanceReport.session ? attendanceReport.session.id : null))}
+                                    title={`Manually mark ${record.name} as Present`}
+                                    className="p-1.5 px-2.5 rounded-xl text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/60 transition cursor-pointer flex items-center space-x-1"
+                                  >
+                                    <UserCheck size={14} />
+                                    <span className="text-[10px] font-mono font-bold">Mark Present</span>
+                                  </button>
+                                )}
                                 {record.user_id && record.device && (
                                   <button
                                     onClick={() => handleResetDevice(record.user_id, record.name)}
@@ -1313,16 +1380,14 @@ const AdminDashboard = () => {
                                     <RotateCcw size={15} />
                                   </button>
                                 )}
-                                {record.status === 'Present' && record.record_id ? (
+                                {record.status === 'Present' && record.record_id && (
                                   <button
                                     onClick={() => handleDeleteSingleRecord(record.record_id, record.name)}
-                                    title="Delete this student's attendance record"
+                                    title="Remove attendance record (mark as Absent)"
                                     className="p-2 rounded-xl text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
                                   >
                                     <Trash2 size={16} />
                                   </button>
-                                ) : (
-                                  !record.device && <span className="text-zinc-300 dark:text-zinc-700 text-xs font-mono pr-2">—</span>
                                 )}
                               </div>
                             </td>
@@ -1830,6 +1895,128 @@ const AdminDashboard = () => {
         )}
 
       </div>
+
+      {/* Manual Check-in Dialog Modal */}
+      {manualModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 relative">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                  <UserCheck size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-zinc-900 dark:text-zinc-100">Manual Attendance Check-in</h3>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Override or manually record a student's presence</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setManualModalOpen(false)}
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <XCircle size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleManualFormSubmit} className="space-y-4">
+              {/* Quick Select from Roster / Whitelist */}
+              <div>
+                <label className="block text-xs font-mono font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1.5">
+                  Select Registered Student or Enter Email
+                </label>
+                <div className="space-y-2">
+                  {allowedEmails.length > 0 && (
+                    <select
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val) {
+                          const item = allowedEmails.find(x => x.email === val);
+                          setManualEmail(val);
+                          if (item && item.name) setManualName(item.name);
+                        }
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 text-xs font-mono outline-none focus:border-emerald-500 transition cursor-pointer"
+                    >
+                      <option value="">-- Choose from Authorized Whitelist --</option>
+                      {allowedEmails.map((item) => (
+                        <option key={item.id} value={item.email}>
+                          {item.name ? `${item.name} (${item.email})` : item.email}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  <input
+                    type="email"
+                    required
+                    placeholder="student@eng.fx.edu"
+                    value={manualEmail}
+                    onChange={(e) => setManualEmail(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 text-xs font-mono outline-none focus:border-emerald-500 transition"
+                  />
+                </div>
+              </div>
+
+              {/* Student Name */}
+              <div>
+                <label className="block text-xs font-mono font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1.5">
+                  Student Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. John Doe"
+                  value={manualName}
+                  onChange={(e) => setManualName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 text-xs outline-none focus:border-emerald-500 transition"
+                />
+              </div>
+
+              {/* Session Target */}
+              <div>
+                <label className="block text-xs font-mono font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1.5">
+                  Attendance Session
+                </label>
+                <select
+                  value={manualSessionId || ''}
+                  onChange={(e) => setManualSessionId(e.target.value ? parseInt(e.target.value, 10) : null)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 text-xs font-mono outline-none focus:border-emerald-500 transition cursor-pointer"
+                >
+                  <option value="">Current Active / Selected Session</option>
+                  {allSessions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      Session #{s.id} ({s.status})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setManualModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold font-mono text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={manualLoading}
+                  className="flex items-center space-x-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-bold font-mono uppercase tracking-wider transition shadow-sm disabled:opacity-50 cursor-pointer"
+                >
+                  {manualLoading ? (
+                    <span>Recording...</span>
+                  ) : (
+                    <>
+                      <Check size={14} className="stroke-[3]" />
+                      <span>Record as Present</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
