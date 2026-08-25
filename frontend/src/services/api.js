@@ -1,15 +1,20 @@
 import axios from 'axios';
+import { getDeviceId } from '../utils/device';
 
 const api = axios.create({
   baseURL: '/api',
 });
 
-// Request interceptor to add the auth token
+// Request interceptor to add the auth token & device identifier
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    const deviceId = getDeviceId();
+    if (deviceId) {
+      config.headers['X-Device-Id'] = deviceId;
     }
     return config;
   },
@@ -31,4 +36,5 @@ api.interceptors.response.use(
 );
 
 export default api;
+
 

@@ -265,6 +265,12 @@ const UserDashboard = () => {
           </div>
         </div>
         <div className="flex items-center space-x-3">
+          {/* Registered Device Badge */}
+          <div className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 text-xs font-mono rounded-xl">
+            <ShieldCheck size={14} className="text-emerald-500" />
+            <span className="truncate max-w-[180px]">{user.device?.device_name || "Bound Device"}</span>
+          </div>
+
           <ThemeToggle />
           <button onClick={logout} className="flex items-center space-x-2 text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-4 py-2.5 rounded-xl text-xs font-bold font-mono uppercase tracking-wider shadow-xs">
             <LogOut size={16} />
