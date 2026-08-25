@@ -72,7 +72,3 @@ class AllowedEmailResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class GoogleSheetsSyncRequest(BaseModel):
-    webhook_url: str
-    session_id: Optional[int] = None
-

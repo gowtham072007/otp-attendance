@@ -9,15 +9,12 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from ..database import get_db
-from ..models import User, AttendanceSession, OTP, AttendanceRecord, AllowedEmail
-import httpx
 from ..schemas import (
     OTPSessionResponse, 
     OTPResponse, 
     AllowedEmailCreate, 
     AllowedEmailBulkCreate, 
-    AllowedEmailResponse,
-    GoogleSheetsSyncRequest
+    AllowedEmailResponse
 )
 from ..auth.utils import get_current_admin
 
@@ -337,42 +334,6 @@ def export_attendance(session_id: Optional[int] = None, db: Session = Depends(ge
         media_type="text/csv", 
         headers={"Content-Disposition": f"attachment; filename=attendance_{session_num}_{current_ist}.csv"}
     )
-
-@router.post("/session/attendance/sync-google-sheets")
-def sync_google_sheets(payload: GoogleSheetsSyncRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    data = compute_session_attendance(db, payload.session_id)
-    records = data["records"]
-    session_info = data["session"]
-    summary = data["summary"]
-    
-    webhook_url = payload.webhook_url.strip()
-    if not (webhook_url.startswith("http://") or webhook_url.startswith("https://")):
-        raise HTTPException(status_code=400, detail="Invalid Webhook URL. It must begin with https:// or http://")
-    
-    post_payload = {
-        "session_info": session_info,
-        "summary": summary,
-        "records": records,
-        "exported_at": datetime.now(IST).strftime('%d-%m-%Y %I:%M:%S %p IST'),
-        "admin_email": admin.email
-    }
-    
-    try:
-        with httpx.Client(timeout=25.0, follow_redirects=True) as client:
-            resp = client.post(webhook_url, json=post_payload)
-            if resp.status_code >= 400:
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Google Sheets Webhook returned error HTTP {resp.status_code}: {resp.text}"
-                )
-            return {
-                "status": "success", 
-                "message": f"Successfully synced {len(records)} records to Google Sheets!",
-                "synced_count": len(records)
-            }
-    except httpx.RequestError as exc:
-        raise HTTPException(status_code=502, detail=f"Network error communicating with Google Sheets Webhook: {str(exc)}")
-
 
 @router.delete("/attendance/all")
 def delete_all_attendance(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
