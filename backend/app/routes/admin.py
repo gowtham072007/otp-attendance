@@ -39,7 +39,7 @@ except (ImportError, ValueError):
     from app.auth.utils import get_current_admin
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-INITIAL_ADMIN_EMAIL = os.getenv("INITIAL_ADMIN_EMAIL", "admin@example.com").strip().lower()
+INITIAL_ADMIN_EMAIL = os.getenv("INITIAL_ADMIN_EMAIL", "admin@francisxavier.ac.in").strip().lower()
 
 def is_master_admin(admin: User) -> bool:
     if not admin or not admin.email:

@@ -66,7 +66,7 @@ const formatISTDateTime = (dateStr) => {
 
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
-  const isMasterAdmin = Boolean(user?.is_master_admin || user?.email?.toLowerCase() === 'admin@example.com');
+  const isMasterAdmin = Boolean(user?.is_master_admin || user?.email?.toLowerCase() === 'admin@francisxavier.ac.in' || user?.email?.toLowerCase() === 'admin@example.com');
   const [activeTab, setActiveTab] = useState('session'); // 'session' | 'whitelist'
   const [session, setSession] = useState(null);
   const [otp, setOtp] = useState(null);
@@ -1543,14 +1543,14 @@ const AdminDashboard = () => {
                 <div>
                   <div className="flex items-center space-x-2">
                     <h2 className="text-base font-black uppercase tracking-wider text-black dark:text-white">Authorized Login Whitelist</h2>
-                    {user?.email?.toLowerCase() === 'admin@example.com' && (
+                    {isMasterAdmin && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-purple-100 dark:bg-purple-950/80 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
                         👑 Master Admin (All Lists)
                       </span>
                     )}
                   </div>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    {user?.email?.toLowerCase() === 'admin@example.com' 
+                    {isMasterAdmin 
                       ? "Showing all authorized students across all administrators" 
                       : "Only the students you have authorized can log into the portal"}
                   </p>
@@ -1574,7 +1574,7 @@ const AdminDashboard = () => {
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-zinc-100/90 dark:bg-zinc-950/90 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-mono uppercase tracking-wider text-zinc-600 dark:text-zinc-400 font-bold">
                       <th className="p-4 pl-6">Allowed Email & Student</th>
-                      {user?.email?.toLowerCase() === 'admin@example.com' && (
+                      {isMasterAdmin && (
                         <th className="p-4">Authorized By</th>
                       )}
                       <th className="p-4">Added On (IST)</th>
@@ -1585,7 +1585,7 @@ const AdminDashboard = () => {
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 text-sm">
                     {filteredWhitelistEmails.length === 0 ? (
                       <tr>
-                        <td colSpan={user?.email?.toLowerCase() === 'admin@example.com' ? 5 : 4} className="p-12 text-center text-zinc-400 dark:text-zinc-600 font-mono text-xs">
+                        <td colSpan={isMasterAdmin ? 5 : 4} className="p-12 text-center text-zinc-400 dark:text-zinc-600 font-mono text-xs">
                           {searchQuery ? "No matching emails found." : "No emails saved yet. Add allowed student emails using the form on the left."}
                         </td>
                       </tr>
@@ -1598,7 +1598,7 @@ const AdminDashboard = () => {
                               <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{item.name}</div>
                             )}
                           </td>
-                          {user?.email?.toLowerCase() === 'admin@example.com' && (
+                          {isMasterAdmin && (
                             <td className="p-4">
                               <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
                                 {item.admin_name || "Master Administrator"}
@@ -1687,7 +1687,7 @@ const AdminDashboard = () => {
                         Protected Setting: Master Admin Only
                       </div>
                       <div className="mt-1 text-zinc-600 dark:text-zinc-400">
-                        Attendance venue coordinates and geofence radius settings are centrally managed and can strictly only be updated by the Master Administrator (<span className="font-mono font-semibold text-zinc-900 dark:text-zinc-200">admin@example.com</span>). Active settings are displayed in read-only mode.
+                        Attendance venue coordinates and geofence radius settings are centrally managed and can strictly only be updated by the Master Administrator (<span className="font-mono font-semibold text-zinc-900 dark:text-zinc-200">admin@francisxavier.ac.in</span>). Active settings are displayed in read-only mode.
                       </div>
                     </div>
                   </div>

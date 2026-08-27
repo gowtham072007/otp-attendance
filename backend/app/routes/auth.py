@@ -16,7 +16,7 @@ except (ImportError, ValueError):
     from app.auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-INITIAL_ADMIN_EMAIL = os.getenv("INITIAL_ADMIN_EMAIL", "admin@example.com").strip().lower()
+INITIAL_ADMIN_EMAIL = os.getenv("INITIAL_ADMIN_EMAIL", "admin@francisxavier.ac.in").strip().lower()
 ADMIN_REGISTRATION_KEY = os.getenv("ADMIN_REGISTRATION_KEY", "admin123").strip()
 
 @router.post("/login", response_model=Token)

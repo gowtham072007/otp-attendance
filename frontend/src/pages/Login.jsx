@@ -334,7 +334,7 @@ const Login = () => {
                   <input 
                     type="email" 
                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/60 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800 outline-none transition font-medium text-sm"
-                    placeholder="admin@example.com"
+                    placeholder="admin@francisxavier.ac.in"
                     value={adminForm.email}
                     onChange={(e) => setAdminForm({...adminForm, email: e.target.value})}
                   />
@@ -415,7 +415,7 @@ const Login = () => {
                   <input 
                     type="email" 
                     className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/60 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800 outline-none transition font-medium text-sm"
-                    placeholder="admin@example.com"
+                    placeholder="admin@francisxavier.ac.in"
                     value={adminForm.email}
                     onChange={(e) => setAdminForm({...adminForm, email: e.target.value})}
                   />
