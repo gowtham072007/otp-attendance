@@ -73,13 +73,12 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const adminRegister = async (fullName, email, password, adminSecretKey) => {
+  const adminRegister = async (fullName, email, password) => {
     try {
       const response = await api.post('/auth/admin/register', { 
         full_name: fullName,
         email, 
-        password,
-        admin_secret_key: adminSecretKey
+        password
       });
       
       if (response.data.is_approved && response.data.access_token) {

@@ -31,12 +31,10 @@ const Login = () => {
   const [adminForm, setAdminForm] = useState({ 
     fullName: '', 
     email: '', 
-    password: '', 
-    secretKey: '' 
+    password: ''
   });
   
   const [showPassword, setShowPassword] = useState(false);
-  const [showSecretKey, setShowSecretKey] = useState(false);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -104,8 +102,8 @@ const Login = () => {
   // Admin Register Submit
   const handleAdminRegisterSubmit = async (e) => {
     e.preventDefault();
-    if (!adminForm.fullName.trim() || !adminForm.email.trim() || !adminForm.password || !adminForm.secretKey.trim()) {
-      setError("Please fill in all fields including the Admin Secret Passkey.");
+    if (!adminForm.fullName.trim() || !adminForm.email.trim() || !adminForm.password) {
+      setError("Please fill in all fields (Full Name, Institutional Email, and Password).");
       return;
     }
 
@@ -121,16 +119,15 @@ const Login = () => {
       const res = await adminRegister(
         adminForm.fullName.trim(),
         adminForm.email.trim(),
-        adminForm.password,
-        adminForm.secretKey.trim()
+        adminForm.password
       );
       if (res && !res.is_approved) {
         setSuccessMsg("Registration Submitted! Your administrator account has been created and is awaiting approval from the Master Administrator (admin@francisxavier.ac.in). You will be able to sign in once approved.");
         setAdminSubMode('LOGIN');
-        setAdminForm({ email: adminForm.email.trim(), password: '', fullName: '', secretKey: '' });
+        setAdminForm({ email: adminForm.email.trim(), password: '', fullName: '' });
       }
     } catch (err) {
-      setError(err.response?.data?.detail || "Admin account creation failed. Please check the Admin Secret Key.");
+      setError(err.response?.data?.detail || "Admin account creation failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -243,12 +240,12 @@ const Login = () => {
               </>
             ) : (
               <>
-                <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-mono font-bold uppercase rounded-md mb-2 border border-emerald-200 dark:border-emerald-800">
-                  <UserPlus size={11} className="text-emerald-600 dark:text-emerald-400" />
-                  <span>Admin Provisioning</span>
+                <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-mono font-bold uppercase rounded-md mb-2 border border-purple-200 dark:border-purple-800">
+                  <UserPlus size={11} className="text-purple-600 dark:text-purple-400" />
+                  <span>Admin Registration</span>
                 </div>
                 <h2 className="text-2xl font-black text-black dark:text-white tracking-tight">Create Admin Account</h2>
-                <p className="text-zinc-500 dark:text-zinc-400 text-xs mt-1">Register a new administrator with the Secret Passkey.</p>
+                <p className="text-zinc-500 dark:text-zinc-400 text-xs mt-1">Register for instructor access. New accounts will be reviewed and approved by Master Admin.</p>
               </>
             )}
           </div>
@@ -452,39 +449,13 @@ const Login = () => {
                 </div>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
-                    Admin Secret Passkey
-                  </label>
-                  <span className="text-[10px] text-zinc-400 font-mono">Default: admin123</span>
-                </div>
-                <div className="relative">
-                  <Key size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-                  <input 
-                    type={showSecretKey ? "text" : "password"} 
-                    className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/60 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800 outline-none transition font-mono text-sm"
-                    placeholder="Enter admin passkey"
-                    value={adminForm.secretKey}
-                    onChange={(e) => setAdminForm({...adminForm, secretKey: e.target.value})}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowSecretKey(!showSecretKey)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer p-1"
-                  >
-                    {showSecretKey ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-              </div>
-
               <button 
                 type="submit" 
                 disabled={loading}
-                className="w-full mt-2 flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white py-3.5 rounded-xl font-bold font-mono uppercase tracking-wider text-xs transition shadow-md disabled:bg-zinc-300 dark:disabled:bg-zinc-800 disabled:text-zinc-500 cursor-pointer"
+                className="w-full mt-2 flex items-center justify-center space-x-2 bg-purple-600 hover:bg-purple-700 active:scale-[0.99] text-white py-3.5 rounded-xl font-bold font-mono uppercase tracking-wider text-xs transition shadow-md disabled:bg-zinc-300 dark:disabled:bg-zinc-800 disabled:text-zinc-500 cursor-pointer"
               >
                 <UserPlus size={16} />
-                <span>{loading ? 'Registering Account...' : 'Create Admin Account'}</span>
+                <span>{loading ? 'Submitting Registration...' : 'Create Admin Account'}</span>
               </button>
 
               {/* Toggle to Login */}

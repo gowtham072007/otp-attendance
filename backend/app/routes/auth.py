@@ -224,25 +224,17 @@ def admin_register(request: AdminRegisterRequest, db: Session = Depends(get_db))
     full_name = request.full_name.strip()
     email = request.email.strip().lower()
     password = request.password.strip()
-    secret_key = request.admin_secret_key.strip()
 
-    if not full_name or not email or not password or not secret_key:
+    if not full_name or not email or not password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Full Name, Email, Password, and Admin Secret Passkey are all required."
+            detail="Full Name, Email, and Password are all required."
         )
 
     if len(password) < 6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password must be at least 6 characters long."
-        )
-
-    expected_key = os.getenv("ADMIN_REGISTRATION_KEY", "admin123").strip()
-    if secret_key != expected_key:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid Admin Secret Passkey. Please enter the valid administrator secret passkey."
         )
 
     is_master = (email == INITIAL_ADMIN_EMAIL)

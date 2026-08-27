@@ -49,7 +49,6 @@ class AdminRegisterRequest(BaseModel):
     full_name: str
     email: str
     password: str
-    admin_secret_key: str
 
 class OTPSessionResponse(BaseModel):
     id: int
