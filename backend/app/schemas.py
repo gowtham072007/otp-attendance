@@ -40,6 +40,16 @@ class DirectLoginRequest(BaseModel):
     device_id: Optional[str] = None
     device_name: Optional[str] = None
 
+class AdminLoginRequest(BaseModel):
+    email: str
+    password: str
+
+class AdminRegisterRequest(BaseModel):
+    full_name: str
+    email: str
+    password: str
+    admin_secret_key: str
+
 class OTPSessionResponse(BaseModel):
     id: int
     status: str

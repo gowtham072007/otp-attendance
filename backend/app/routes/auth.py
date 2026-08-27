@@ -7,16 +7,17 @@ from datetime import datetime, timezone, timedelta
 try:
     from ..database import get_db
     from ..models import User, AllowedEmail, UserDevice
-    from ..schemas import DirectLoginRequest, Token, UserResponse
-    from ..auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
+    from ..schemas import DirectLoginRequest, AdminLoginRequest, AdminRegisterRequest, Token, UserResponse
+    from ..auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES, hash_password, verify_password
 except (ImportError, ValueError):
     from app.database import get_db
     from app.models import User, AllowedEmail, UserDevice
-    from app.schemas import DirectLoginRequest, Token, UserResponse
-    from app.auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
+    from app.schemas import DirectLoginRequest, AdminLoginRequest, AdminRegisterRequest, Token, UserResponse
+    from app.auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 INITIAL_ADMIN_EMAIL = os.getenv("INITIAL_ADMIN_EMAIL", "admin@example.com").strip().lower()
+ADMIN_REGISTRATION_KEY = os.getenv("ADMIN_REGISTRATION_KEY", "admin123").strip()
 
 @router.post("/login", response_model=Token)
 def direct_login(request: DirectLoginRequest, db: Session = Depends(get_db)):
@@ -150,6 +151,148 @@ def direct_login(request: DirectLoginRequest, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+
+
+@router.post("/admin/login", response_model=Token)
+def admin_login(request: AdminLoginRequest, db: Session = Depends(get_db)):
+    email = request.email.strip().lower()
+    password = request.password.strip()
+
+    if not email or not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin Email and Password are required."
+        )
+
+    user = db.query(User).filter(func.lower(User.email) == email).first()
+    is_initial_admin = (email == INITIAL_ADMIN_EMAIL)
+
+    # If user does not exist yet but matches INITIAL_ADMIN_EMAIL bootstrap
+    if not user and is_initial_admin:
+        user = User(
+            email=email,
+            google_id=str(uuid.uuid4()),
+            full_name="Master Administrator",
+            role="ADMIN",
+            hashed_password=hash_password(password)
+        )
+        db.add(user)
+        # Ensure in allowed emails
+        allowed = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == email).first()
+        if not allowed:
+            db.add(AllowedEmail(email=email, name="Master Administrator"))
+        db.commit()
+        db.refresh(user)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Admin account not found. Please create an admin account first."
+        )
+
+    if user.role != "ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: This account does not have Administrator privileges."
+        )
+
+    # Password check
+    if user.hashed_password:
+        if not verify_password(password, user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect admin password. Please try again."
+            )
+    else:
+        # Legacy admin account without password set -> set password on first login
+        user.hashed_password = hash_password(password)
+        db.commit()
+
+    # Ensure admin is in allowed_emails
+    allowed = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == email).first()
+    if not allowed:
+        db.add(AllowedEmail(email=email, name=user.full_name or "Administrator"))
+        db.commit()
+
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.email, "role": "ADMIN"}, expires_delta=access_token_expires
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user
+    }
+
+
+@router.post("/admin/register", response_model=Token)
+def admin_register(request: AdminRegisterRequest, db: Session = Depends(get_db)):
+    full_name = request.full_name.strip()
+    email = request.email.strip().lower()
+    password = request.password.strip()
+    secret_key = request.admin_secret_key.strip()
+
+    if not full_name or not email or not password or not secret_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Full Name, Email, Password, and Admin Secret Passkey are all required."
+        )
+
+    if len(password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 6 characters long."
+        )
+
+    expected_key = os.getenv("ADMIN_REGISTRATION_KEY", "admin123").strip()
+    if secret_key != expected_key:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid Admin Secret Passkey. Please enter the valid administrator secret passkey."
+        )
+
+    # Check if user already exists
+    existing_user = db.query(User).filter(func.lower(User.email) == email).first()
+    if existing_user:
+        if existing_user.role == "ADMIN" and existing_user.hashed_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An administrator account with this email address already exists. Please sign in."
+            )
+        # Upgrade existing user or set password
+        existing_user.full_name = full_name
+        existing_user.role = "ADMIN"
+        existing_user.hashed_password = hash_password(password)
+        db.commit()
+        db.refresh(existing_user)
+        user = existing_user
+    else:
+        user = User(
+            email=email,
+            google_id=str(uuid.uuid4()),
+            full_name=full_name,
+            role="ADMIN",
+            hashed_password=hash_password(password)
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    # Add to allowed emails whitelist
+    allowed = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == email).first()
+    if not allowed:
+        db.add(AllowedEmail(email=email, name=full_name))
+        db.commit()
+
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.email, "role": "ADMIN"}, expires_delta=access_token_expires
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user
+    }
 
 
 @router.get("/me", response_model=UserResponse)

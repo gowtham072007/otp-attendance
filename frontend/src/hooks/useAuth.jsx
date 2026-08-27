@@ -55,6 +55,44 @@ export const AuthProvider = ({ children }) => {
   };
 
 
+  const adminLogin = async (email, password) => {
+    try {
+      const response = await api.post('/auth/admin/login', { 
+        email, 
+        password
+      });
+      localStorage.setItem('token', response.data.access_token);
+      
+      const userData = response.data.user;
+      setUser(userData);
+      navigate('/admin');
+      return userData;
+    } catch (error) {
+      console.error("Admin Login failed", error);
+      throw error;
+    }
+  };
+
+  const adminRegister = async (fullName, email, password, adminSecretKey) => {
+    try {
+      const response = await api.post('/auth/admin/register', { 
+        full_name: fullName,
+        email, 
+        password,
+        admin_secret_key: adminSecretKey
+      });
+      localStorage.setItem('token', response.data.access_token);
+      
+      const userData = response.data.user;
+      setUser(userData);
+      navigate('/admin');
+      return userData;
+    } catch (error) {
+      console.error("Admin Registration failed", error);
+      throw error;
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     setUser(null);
@@ -62,7 +100,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, adminLogin, adminRegister, logout }}>
       {children}
     </AuthContext.Provider>
   );

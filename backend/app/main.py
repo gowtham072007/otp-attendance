@@ -41,6 +41,16 @@ def migrate_db():
             except Exception:
                 pass
 
+        # Check and add columns to users
+        for col_name, col_type in [
+            ("hashed_password", "VARCHAR")
+        ]:
+            try:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
+                conn.commit()
+            except Exception:
+                pass
+
 migrate_db()
 
 def seed_initial_admin():
