@@ -1174,16 +1174,16 @@ const AdminDashboard = () => {
 
                   <div className="flex items-center space-x-3">
                     {/* Session Selector Dropdown */}
-                    {allSessions.length > 1 && (
+                    {allSessions.length > 0 && (
                       <select
                         value={selectedSessionId || ''}
                         onChange={handleSelectSession}
                         className="bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs rounded-xl px-3 py-2 font-mono outline-none focus:border-black dark:focus:border-white transition"
                       >
-                        <option value="">Latest Session</option>
+                        <option value="">Latest Active Session</option>
                         {allSessions.map((s) => (
                           <option key={s.id} value={s.id}>
-                            Session #{s.id} ({s.status})
+                            Session #{s.id} ({s.formatted_date || s.status}) - {s.present_count || 0} Present {isMasterAdmin && s.admin_name ? `[Admin: ${s.admin_name}]` : ''}
                           </option>
                         ))}
                       </select>

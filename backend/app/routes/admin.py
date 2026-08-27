@@ -286,16 +286,26 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
 
 @router.get("/sessions")
 def get_all_sessions(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    sessions = db.query(AttendanceSession).filter(AttendanceSession.admin_id == admin.id).order_by(AttendanceSession.id.desc()).all()
+    all_admins = {u.id: u for u in db.query(User).filter(User.role == "ADMIN").all()}
+    
+    if is_master_admin(admin):
+        sessions = db.query(AttendanceSession).order_by(AttendanceSession.id.desc()).all()
+    else:
+        sessions = db.query(AttendanceSession).filter(AttendanceSession.admin_id == admin.id).order_by(AttendanceSession.id.desc()).all()
+        
     result = []
     for s in sessions:
         count = db.query(AttendanceRecord).join(User, AttendanceRecord.user_id == User.id).filter(
             AttendanceRecord.session_id == s.id,
             User.role == "USER"
         ).count()
+        creator = all_admins.get(s.admin_id)
         result.append({
             "id": s.id,
             "status": s.status,
+            "admin_id": s.admin_id,
+            "admin_name": creator.full_name if creator else "Master Administrator",
+            "admin_email": creator.email if creator else None,
             "created_at": to_ist(s.created_at).isoformat() if s.created_at else None,
             "formatted_date": format_ist_date(s.created_at),
             "formatted_time": format_ist_time_short(s.created_at),
@@ -413,11 +423,13 @@ def get_current_session(db: Session = Depends(get_db), admin: User = Depends(get
 
 @router.get("/session/attendance")
 def get_attendance(session_id: Optional[int] = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    return compute_session_attendance(db, session_id, admin_id=admin.id)
+    effective_admin_id = None if is_master_admin(admin) else admin.id
+    return compute_session_attendance(db, session_id, admin_id=effective_admin_id)
 
 @router.get("/session/attendance/export")
 def export_attendance(session_id: Optional[int] = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    data = compute_session_attendance(db, session_id, admin_id=admin.id)
+    effective_admin_id = None if is_master_admin(admin) else admin.id
+    data = compute_session_attendance(db, session_id, admin_id=effective_admin_id)
     records = data["records"]
     session_info = data["session"]
     session_num = f"Session_{session_info['id']:02d}" if session_info else "Attendance"
@@ -446,21 +458,26 @@ def export_attendance(session_id: Optional[int] = None, db: Session = Depends(ge
 
 @router.delete("/attendance/all")
 def delete_all_attendance(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    admin_sessions = db.query(AttendanceSession).filter(AttendanceSession.admin_id == admin.id).all()
+    if is_master_admin(admin):
+        admin_sessions = db.query(AttendanceSession).all()
+    else:
+        admin_sessions = db.query(AttendanceSession).filter(AttendanceSession.admin_id == admin.id).all()
+    
     session_ids = [s.id for s in admin_sessions]
     if session_ids:
         db.query(AttendanceRecord).filter(AttendanceRecord.session_id.in_(session_ids)).delete(synchronize_session=False)
         db.query(OTP).filter(OTP.session_id.in_(session_ids)).delete(synchronize_session=False)
         db.query(AttendanceSession).filter(AttendanceSession.id.in_(session_ids)).delete(synchronize_session=False)
         db.commit()
-    return {"message": "Your attendance records and sessions have been permanently deleted."}
+    return {"message": "Attendance records and sessions have been permanently deleted."}
 
 @router.delete("/session/{session_id}")
 def delete_session(session_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    session_obj = db.query(AttendanceSession).filter(
-        AttendanceSession.id == session_id,
-        AttendanceSession.admin_id == admin.id
-    ).first()
+    query = db.query(AttendanceSession).filter(AttendanceSession.id == session_id)
+    if not is_master_admin(admin):
+        query = query.filter(AttendanceSession.admin_id == admin.id)
+
+    session_obj = query.first()
     if not session_obj:
         raise HTTPException(status_code=404, detail="Session not found or belongs to another administrator.")
     
@@ -470,10 +487,13 @@ def delete_session(session_id: int, db: Session = Depends(get_db), admin: User =
 
 @router.delete("/attendance/record/{record_id}")
 def delete_single_attendance_record(record_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    record = db.query(AttendanceRecord).join(AttendanceSession, AttendanceRecord.session_id == AttendanceSession.id).filter(
-        AttendanceRecord.id == record_id,
-        AttendanceSession.admin_id == admin.id
-    ).first()
+    query = db.query(AttendanceRecord).join(AttendanceSession, AttendanceRecord.session_id == AttendanceSession.id).filter(
+        AttendanceRecord.id == record_id
+    )
+    if not is_master_admin(admin):
+        query = query.filter(AttendanceSession.admin_id == admin.id)
+
+    record = query.first()
     if not record:
         raise HTTPException(status_code=404, detail="Attendance record not found or does not belong to your session.")
     
