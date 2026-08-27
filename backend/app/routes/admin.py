@@ -77,9 +77,12 @@ def get_active_geofence(db: Session) -> GeofenceConfig:
         db.refresh(config)
     return config
 
-def get_today_session(db: Session) -> Optional[AttendanceSession]:
+def get_today_session(db: Session, admin_id: Optional[int] = None) -> Optional[AttendanceSession]:
     today_ist_str = datetime.now(IST).strftime("%d-%m-%Y")
-    sessions = db.query(AttendanceSession).order_by(AttendanceSession.id.desc()).all()
+    query = db.query(AttendanceSession)
+    if admin_id is not None:
+        query = query.filter(AttendanceSession.admin_id == admin_id)
+    sessions = query.order_by(AttendanceSession.id.desc()).all()
     for s in sessions:
         if format_ist_date(s.created_at) == today_ist_str:
             return s
@@ -87,17 +90,26 @@ def get_today_session(db: Session) -> Optional[AttendanceSession]:
 
 # --- Helper to calculate Present and Absent students for a session ---
 
-def compute_session_attendance(db: Session, session_id: Optional[int] = None):
+def compute_session_attendance(db: Session, session_id: Optional[int] = None, admin_id: Optional[int] = None):
     geofence = get_active_geofence(db)
     if session_id:
-        target_session = db.query(AttendanceSession).filter(AttendanceSession.id == session_id).first()
+        query = db.query(AttendanceSession).filter(AttendanceSession.id == session_id)
+        if admin_id is not None:
+            query = query.filter(AttendanceSession.admin_id == admin_id)
+        target_session = query.first()
     else:
-        # Check today's session first, or active session, or most recent session
-        target_session = get_today_session(db)
+        # Check today's session first, or active session, or most recent session for this admin
+        target_session = get_today_session(db, admin_id=admin_id)
         if not target_session:
-            target_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
+            query = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE")
+            if admin_id is not None:
+                query = query.filter(AttendanceSession.admin_id == admin_id)
+            target_session = query.first()
         if not target_session:
-            target_session = db.query(AttendanceSession).order_by(AttendanceSession.id.desc()).first()
+            query = db.query(AttendanceSession)
+            if admin_id is not None:
+                query = query.filter(AttendanceSession.admin_id == admin_id)
+            target_session = query.order_by(AttendanceSession.id.desc()).first()
             
     if not target_session:
         return {
@@ -275,7 +287,7 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
 
 @router.get("/sessions")
 def get_all_sessions(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    sessions = db.query(AttendanceSession).order_by(AttendanceSession.id.desc()).all()
+    sessions = db.query(AttendanceSession).filter(AttendanceSession.admin_id == admin.id).order_by(AttendanceSession.id.desc()).all()
     result = []
     for s in sessions:
         count = db.query(AttendanceRecord).join(User, AttendanceRecord.user_id == User.id).filter(
@@ -294,13 +306,16 @@ def get_all_sessions(db: Session = Depends(get_db), admin: User = Depends(get_cu
 
 @router.post("/session/start", response_model=OTPSessionResponse)
 def start_session(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    # 1. Check if there's already an active session
-    active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
+    # 1. Check if there's already an active session for this admin
+    active_session = db.query(AttendanceSession).filter(
+        AttendanceSession.admin_id == admin.id,
+        AttendanceSession.status == "ACTIVE"
+    ).first()
     if active_session:
-        raise HTTPException(status_code=400, detail="An active attendance session is already running.")
+        raise HTTPException(status_code=400, detail="You already have an active attendance session running.")
     
-    # 2. Check 1 session per day limit (IST)
-    today_session = get_today_session(db)
+    # 2. Check 1 session per day limit per admin (IST)
+    today_session = get_today_session(db, admin_id=admin.id)
     if today_session:
         raise HTTPException(
             status_code=400, 
@@ -315,9 +330,12 @@ def start_session(db: Session = Depends(get_db), admin: User = Depends(get_curre
 
 @router.post("/session/generate-otp", response_model=OTPResponse)
 def generate_otp(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
+    active_session = db.query(AttendanceSession).filter(
+        AttendanceSession.admin_id == admin.id,
+        AttendanceSession.status == "ACTIVE"
+    ).first()
     if not active_session:
-        raise HTTPException(status_code=400, detail="No active session found. Start a session first.")
+        raise HTTPException(status_code=400, detail="No active session found for your administrator account. Start a session first.")
     
     # Invalidate previous OTPs for this session
     previous_otps = db.query(OTP).filter(OTP.session_id == active_session.id, OTP.status == "ACTIVE").all()
@@ -336,9 +354,12 @@ def generate_otp(db: Session = Depends(get_db), admin: User = Depends(get_curren
 
 @router.post("/session/end")
 def end_session(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
+    active_session = db.query(AttendanceSession).filter(
+        AttendanceSession.admin_id == admin.id,
+        AttendanceSession.status == "ACTIVE"
+    ).first()
     if not active_session:
-        raise HTTPException(status_code=400, detail="No active session to end")
+        raise HTTPException(status_code=400, detail="No active session to end for your administrator account.")
     
     active_session.status = "CLOSED"
     
@@ -350,7 +371,7 @@ def end_session(db: Session = Depends(get_db), admin: User = Depends(get_current
     db.commit()
     
     # Compute report for the ended session (includes present_list and absent_list)
-    report = compute_session_attendance(db, active_session.id)
+    report = compute_session_attendance(db, active_session.id, admin_id=admin.id)
     
     return {
         "message": "Session ended successfully",
@@ -360,8 +381,11 @@ def end_session(db: Session = Depends(get_db), admin: User = Depends(get_current
 
 @router.get("/session/current")
 def get_current_session(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
-    today_session = get_today_session(db)
+    active_session = db.query(AttendanceSession).filter(
+        AttendanceSession.admin_id == admin.id,
+        AttendanceSession.status == "ACTIVE"
+    ).first()
+    today_session = get_today_session(db, admin_id=admin.id)
     
     active_otp = None
     if active_session:
@@ -390,11 +414,11 @@ def get_current_session(db: Session = Depends(get_db), admin: User = Depends(get
 
 @router.get("/session/attendance")
 def get_attendance(session_id: Optional[int] = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    return compute_session_attendance(db, session_id)
+    return compute_session_attendance(db, session_id, admin_id=admin.id)
 
 @router.get("/session/attendance/export")
 def export_attendance(session_id: Optional[int] = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    data = compute_session_attendance(db, session_id)
+    data = compute_session_attendance(db, session_id, admin_id=admin.id)
     records = data["records"]
     session_info = data["session"]
     session_num = f"Session_{session_info['id']:02d}" if session_info else "Attendance"
@@ -423,17 +447,23 @@ def export_attendance(session_id: Optional[int] = None, db: Session = Depends(ge
 
 @router.delete("/attendance/all")
 def delete_all_attendance(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    db.query(AttendanceRecord).delete()
-    db.query(OTP).delete()
-    db.query(AttendanceSession).delete()
-    db.commit()
-    return {"message": "All attendance records and sessions have been permanently deleted."}
+    admin_sessions = db.query(AttendanceSession).filter(AttendanceSession.admin_id == admin.id).all()
+    session_ids = [s.id for s in admin_sessions]
+    if session_ids:
+        db.query(AttendanceRecord).filter(AttendanceRecord.session_id.in_(session_ids)).delete(synchronize_session=False)
+        db.query(OTP).filter(OTP.session_id.in_(session_ids)).delete(synchronize_session=False)
+        db.query(AttendanceSession).filter(AttendanceSession.id.in_(session_ids)).delete(synchronize_session=False)
+        db.commit()
+    return {"message": "Your attendance records and sessions have been permanently deleted."}
 
 @router.delete("/session/{session_id}")
 def delete_session(session_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    session_obj = db.query(AttendanceSession).filter(AttendanceSession.id == session_id).first()
+    session_obj = db.query(AttendanceSession).filter(
+        AttendanceSession.id == session_id,
+        AttendanceSession.admin_id == admin.id
+    ).first()
     if not session_obj:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(status_code=404, detail="Session not found or belongs to another administrator.")
     
     db.delete(session_obj)
     db.commit()
@@ -441,30 +471,43 @@ def delete_session(session_id: int, db: Session = Depends(get_db), admin: User =
 
 @router.delete("/attendance/record/{record_id}")
 def delete_single_attendance_record(record_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    record = db.query(AttendanceRecord).filter(AttendanceRecord.id == record_id).first()
+    record = db.query(AttendanceRecord).join(AttendanceSession, AttendanceRecord.session_id == AttendanceSession.id).filter(
+        AttendanceRecord.id == record_id,
+        AttendanceSession.admin_id == admin.id
+    ).first()
     if not record:
-        raise HTTPException(status_code=404, detail="Attendance record not found")
+        raise HTTPException(status_code=404, detail="Attendance record not found or does not belong to your session.")
     
     db.delete(record)
     db.commit()
+    return {"message": "Attendance record deleted successfully."}
+
 @router.post("/attendance/manual-mark")
 def manual_mark_attendance(payload: ManualAttendanceRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     clean_email = payload.email.strip().lower()
     if not clean_email or "@" not in clean_email or "." not in clean_email:
         raise HTTPException(status_code=400, detail="A valid student email address is required.")
     
-    # 1. Determine Target Session
+    # 1. Determine Target Session for this Admin
     if payload.session_id:
-        target_session = db.query(AttendanceSession).filter(AttendanceSession.id == payload.session_id).first()
+        target_session = db.query(AttendanceSession).filter(
+            AttendanceSession.id == payload.session_id,
+            AttendanceSession.admin_id == admin.id
+        ).first()
     else:
-        target_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
+        target_session = db.query(AttendanceSession).filter(
+            AttendanceSession.admin_id == admin.id,
+            AttendanceSession.status == "ACTIVE"
+        ).first()
         if not target_session:
-            target_session = get_today_session(db)
+            target_session = get_today_session(db, admin_id=admin.id)
         if not target_session:
-            target_session = db.query(AttendanceSession).order_by(AttendanceSession.id.desc()).first()
+            target_session = db.query(AttendanceSession).filter(
+                AttendanceSession.admin_id == admin.id
+            ).order_by(AttendanceSession.id.desc()).first()
             
     if not target_session:
-        raise HTTPException(status_code=400, detail="No attendance session found. Please start or create a session first.")
+        raise HTTPException(status_code=400, detail="No attendance session found for your administrator account. Please start or create a session first.")
     
     # 2. Find or Provision the Student User
     user = db.query(User).filter(User.email.ilike(clean_email)).first()
