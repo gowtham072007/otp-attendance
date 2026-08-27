@@ -383,12 +383,24 @@ def start_session(db: Session = Depends(get_db), admin: User = Depends(get_curre
 
 @router.post("/session/generate-otp", response_model=OTPResponse)
 def generate_otp(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
+    master_admin_id = master_admin.id if master_admin else None
+
+    # 1. Check active session for this admin
     active_session = db.query(AttendanceSession).filter(
         AttendanceSession.admin_id == admin.id,
         AttendanceSession.status == "ACTIVE"
     ).first()
+    
+    # 2. If regular admin has no active session, check if Master Admin has an active global session
+    if not active_session and not is_master_admin(admin) and master_admin_id:
+        active_session = db.query(AttendanceSession).filter(
+            AttendanceSession.admin_id == master_admin_id,
+            AttendanceSession.status == "ACTIVE"
+        ).first()
+
     if not active_session:
-        raise HTTPException(status_code=400, detail="No active session found for your administrator account. Start a session first.")
+        raise HTTPException(status_code=400, detail="No active attendance session found to generate OTP. Please start a session first.")
     
     # Invalidate previous OTPs for this session
     previous_otps = db.query(OTP).filter(OTP.session_id == active_session.id, OTP.status == "ACTIVE").all()
@@ -407,12 +419,24 @@ def generate_otp(db: Session = Depends(get_db), admin: User = Depends(get_curren
 
 @router.post("/session/end")
 def end_session(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
+    master_admin_id = master_admin.id if master_admin else None
+
+    # Check active session for this admin
     active_session = db.query(AttendanceSession).filter(
         AttendanceSession.admin_id == admin.id,
         AttendanceSession.status == "ACTIVE"
     ).first()
+    
+    # If regular admin has no active session of their own, check Master Admin's active global session
+    if not active_session and not is_master_admin(admin) and master_admin_id:
+        active_session = db.query(AttendanceSession).filter(
+            AttendanceSession.admin_id == master_admin_id,
+            AttendanceSession.status == "ACTIVE"
+        ).first()
+
     if not active_session:
-        raise HTTPException(status_code=400, detail="No active session to end for your administrator account.")
+        raise HTTPException(status_code=400, detail="No active attendance session to end.")
     
     active_session.status = "CLOSED"
     
@@ -423,7 +447,7 @@ def end_session(db: Session = Depends(get_db), admin: User = Depends(get_current
         
     db.commit()
     
-    # Compute report for the ended session (includes present_list and absent_list)
+    # Compute report for the ended session (includes present_list and absent_list for this admin's students)
     report = compute_session_attendance(db, active_session.id, admin_id=admin.id)
     
     return {
@@ -457,7 +481,7 @@ def get_current_session(db: Session = Depends(get_db), admin: User = Depends(get
         today_session = get_today_session(db, admin_id=master_admin_id)
     
     active_otp = None
-    if active_session and not is_global_active:
+    if active_session:
         active_otp = db.query(OTP).filter(
             OTP.session_id == active_session.id, 
             OTP.status == "ACTIVE",

@@ -69,6 +69,7 @@ const AdminDashboard = () => {
   const isMasterAdmin = Boolean(user?.is_master_admin || user?.email?.toLowerCase() === 'admin@francisxavier.ac.in' || user?.email?.toLowerCase() === 'admin@example.com');
   const [activeTab, setActiveTab] = useState('session'); // 'session' | 'whitelist' | 'location' | 'admins'
   const [session, setSession] = useState(null);
+  const [isGlobalSession, setIsGlobalSession] = useState(false);
   const [otp, setOtp] = useState(null);
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -174,6 +175,7 @@ const AdminDashboard = () => {
         setTodaySession(null);
       }
       setTodayCompleted(Boolean(res.data.today_completed));
+      setIsGlobalSession(Boolean(res.data.is_global_session));
 
       if (res.data.session) {
         setSession(res.data.session);
@@ -1104,13 +1106,23 @@ const AdminDashboard = () => {
                   {/* CASE 3: Active session currently running */}
                   {session && (
                     <div className="flex flex-col">
-                      <div className="flex justify-between items-center mb-6">
+                      <div className="flex justify-between items-center mb-4">
                         <span className="px-3 py-1 bg-black text-white dark:bg-white dark:text-black text-[11px] font-mono font-bold uppercase tracking-wider rounded-full flex items-center shadow-xs">
                           <span className="w-2 h-2 bg-emerald-400 rounded-full mr-2 animate-pulse"></span>
                           ACTIVE
                         </span>
                         <span className="text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-md border border-zinc-200 dark:border-zinc-700">Session #{session}</span>
                       </div>
+
+                      {isGlobalSession && (
+                        <div className="mb-4 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/80 p-3 rounded-2xl flex items-center space-x-2.5 text-xs text-purple-900 dark:text-purple-300">
+                          <Users size={16} className="text-purple-600 dark:text-purple-400 shrink-0" />
+                          <div>
+                            <p className="font-bold">Global Institute Session</p>
+                            <p className="text-[11px] text-purple-700 dark:text-purple-400">Initiated by Master Admin • Live OTP & Controls Active</p>
+                          </div>
+                        </div>
+                      )}
 
                       {!otp ? (
                         <button 
