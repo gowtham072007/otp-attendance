@@ -3,9 +3,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from .database import engine, Base, SessionLocal
-from .models import AllowedEmail
-from .routes import auth, admin, attendance
+try:
+    from .database import engine, Base, SessionLocal
+    from .models import User, AllowedEmail
+    from .routes import auth, admin, attendance
+except (ImportError, ValueError):
+    from app.database import engine, Base, SessionLocal
+    from app.models import User, AllowedEmail
+    from app.routes import auth, admin, attendance
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
