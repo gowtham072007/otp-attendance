@@ -710,17 +710,19 @@ const AdminDashboard = () => {
               {allowedEmails.length}
             </span>
           </button>
-          <button
-            onClick={() => setActiveTab('location')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'location'
-                ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm'
-                : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
-            }`}
-          >
-            <MapPin size={14} className="text-rose-500" />
-            <span>Venue & Geofence</span>
-          </button>
+          {isMasterAdmin && (
+            <button
+              onClick={() => setActiveTab('location')}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'location'
+                  ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm'
+                  : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
+              }`}
+            >
+              <MapPin size={14} className="text-rose-500" />
+              <span>Venue & Geofence</span>
+            </button>
+          )}
         </div>
 
         <div className="flex items-center space-x-3">
@@ -736,7 +738,7 @@ const AdminDashboard = () => {
       </nav>
 
       {/* Mobile Tab Switcher */}
-      <div className="sm:hidden px-6 pt-4 grid grid-cols-3 gap-1.5">
+      <div className={`sm:hidden px-6 pt-4 grid ${isMasterAdmin ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5`}>
         <button
           onClick={() => setActiveTab('session')}
           className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
@@ -759,17 +761,19 @@ const AdminDashboard = () => {
           <Mail size={13} />
           <span>Emails</span>
         </button>
-        <button
-          onClick={() => setActiveTab('location')}
-          className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
-            activeTab === 'location'
-              ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
-              : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
-          }`}
-        >
-          <MapPin size={13} className="text-rose-500" />
-          <span>Venue</span>
-        </button>
+        {isMasterAdmin && (
+          <button
+            onClick={() => setActiveTab('location')}
+            className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
+              activeTab === 'location'
+                ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
+                : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
+            }`}
+          >
+            <MapPin size={13} className="text-rose-500" />
+            <span>Venue</span>
+          </button>
+        )}
       </div>
 
       {/* Main Content */}
@@ -1625,8 +1629,8 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* TAB 3: Venue Location & Geofence GPS Access */}
-        {activeTab === 'location' && (
+        {/* TAB 3: Venue Location & Geofence GPS Access (Master Admin Only) */}
+        {isMasterAdmin && activeTab === 'location' && (
           <div className="space-y-6">
             
             {/* Top Venue Banner */}
