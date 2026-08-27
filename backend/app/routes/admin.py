@@ -20,7 +20,8 @@ try:
         AllowedEmailResponse,
         GeofenceConfigResponse,
         GeofenceConfigUpdate,
-        ManualAttendanceRequest
+        ManualAttendanceRequest,
+        AdminAccountSummary
     )
     from ..auth.utils import get_current_admin
 except (ImportError, ValueError):
@@ -34,7 +35,8 @@ except (ImportError, ValueError):
         AllowedEmailResponse,
         GeofenceConfigResponse,
         GeofenceConfigUpdate,
-        ManualAttendanceRequest
+        ManualAttendanceRequest,
+        AdminAccountSummary
     )
     from app.auth.utils import get_current_admin
 
@@ -836,5 +838,54 @@ def update_geofence_settings(payload: GeofenceConfigUpdate, db: Session = Depend
     db.commit()
     db.refresh(config)
     return config
+
+# --- Administrator Directory (Master Admin Only) ---
+
+@router.get("/admins", response_model=List[AdminAccountSummary])
+def get_all_admins(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    if not is_master_admin(admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Only the Master Administrator can view administrator accounts."
+        )
+
+    admins = db.query(User).filter(User.role == "ADMIN").order_by(User.id.asc()).all()
+    results = []
+    
+    for a in admins:
+        # Check active session
+        active_sess = db.query(AttendanceSession).filter(
+            AttendanceSession.admin_id == a.id,
+            AttendanceSession.status == "ACTIVE"
+        ).first()
+        
+        # Count total sessions
+        sess_count = db.query(AttendanceSession).filter(AttendanceSession.admin_id == a.id).count()
+        
+        # Count whitelisted students
+        whitelist_count = db.query(AllowedEmail).filter(AllowedEmail.admin_id == a.id).count()
+        
+        # Count total attendance records marked across this admin's sessions
+        records_count = db.query(AttendanceRecord).join(AttendanceSession, AttendanceRecord.session_id == AttendanceSession.id).filter(
+            AttendanceSession.admin_id == a.id
+        ).count()
+        
+        is_master = bool(a.email and a.email.strip().lower() == INITIAL_ADMIN_EMAIL)
+        
+        results.append(AdminAccountSummary(
+            id=a.id,
+            full_name=a.full_name or ("Master Administrator" if is_master else "Class Instructor"),
+            email=a.email,
+            is_master=is_master,
+            sessions_count=sess_count,
+            active_session_id=active_sess.id if active_sess else None,
+            whitelisted_students_count=whitelist_count,
+            total_attendance_marked=records_count,
+            created_at=format_ist_date(a.created_at) if hasattr(a, 'created_at') and a.created_at else None
+        ))
+        
+    # Sort Master Admin first, then other admins by id
+    results.sort(key=lambda x: (not x.is_master, x.id))
+    return results
 
 

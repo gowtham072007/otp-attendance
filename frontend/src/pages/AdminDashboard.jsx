@@ -67,16 +67,21 @@ const formatISTDateTime = (dateStr) => {
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
   const isMasterAdmin = Boolean(user?.is_master_admin || user?.email?.toLowerCase() === 'admin@francisxavier.ac.in' || user?.email?.toLowerCase() === 'admin@example.com');
-  const [activeTab, setActiveTab] = useState('session'); // 'session' | 'whitelist'
+  const [activeTab, setActiveTab] = useState('session'); // 'session' | 'whitelist' | 'location' | 'admins'
   const [session, setSession] = useState(null);
   const [otp, setOtp] = useState(null);
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(true);
   const [currentISTTime, setCurrentISTTime] = useState('');
 
-  // Fallback if regular admin ever attempts to view location tab
+  // Administrators Directory state (Master Admin Only)
+  const [adminsList, setAdminsList] = useState([]);
+  const [loadingAdmins, setLoadingAdmins] = useState(false);
+  const [adminSearchQuery, setAdminSearchQuery] = useState('');
+
+  // Fallback if regular admin ever attempts to view protected tabs
   useEffect(() => {
-    if (!isMasterAdmin && activeTab === 'location') {
+    if (!isMasterAdmin && (activeTab === 'location' || activeTab === 'admins')) {
       setActiveTab('session');
     }
   }, [isMasterAdmin, activeTab]);
@@ -238,15 +243,38 @@ const AdminDashboard = () => {
     }
   };
 
+  const fetchAdminsList = async () => {
+    if (!isMasterAdmin) return;
+    setLoadingAdmins(true);
+    try {
+      const res = await api.get('/admin/admins');
+      setAdminsList(res.data || []);
+    } catch (err) {
+      console.error("Failed to load administrators list", err);
+    } finally {
+      setLoadingAdmins(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isMasterAdmin && activeTab === 'admins') {
+      fetchAdminsList();
+    }
+  }, [isMasterAdmin, activeTab]);
+
   useEffect(() => {
     const init = async () => {
-      await Promise.all([
+      const tasks = [
         fetchCurrentSession(), 
         fetchAttendance(), 
         fetchAllSessions(),
         fetchAllowedEmails(),
         fetchGeofence()
-      ]);
+      ];
+      if (isMasterAdmin) {
+        tasks.push(fetchAdminsList());
+      }
+      await Promise.all(tasks);
       setLoading(false);
     };
     init();
@@ -255,7 +283,7 @@ const AdminDashboard = () => {
       fetchAttendance(selectedSessionId);
     }, 10000);
     return () => clearInterval(interval);
-  }, [selectedSessionId]);
+  }, [selectedSessionId, isMasterAdmin]);
 
   useEffect(() => {
     if (countdown > 0) {
@@ -718,17 +746,33 @@ const AdminDashboard = () => {
             </span>
           </button>
           {isMasterAdmin && (
-            <button
-              onClick={() => setActiveTab('location')}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'location'
-                  ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
-              }`}
-            >
-              <MapPin size={14} className="text-rose-500" />
-              <span>Venue & Geofence</span>
-            </button>
+            <>
+              <button
+                onClick={() => setActiveTab('location')}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'location'
+                    ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
+                }`}
+              >
+                <MapPin size={14} className="text-rose-500" />
+                <span>Venue & Geofence</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('admins')}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'admins'
+                    ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
+                }`}
+              >
+                <Users size={14} className="text-purple-500" />
+                <span>Administrators</span>
+                <span className="ml-1 text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
+                  {adminsList.length || 0}
+                </span>
+              </button>
+            </>
           )}
         </div>
 
@@ -745,7 +789,7 @@ const AdminDashboard = () => {
       </nav>
 
       {/* Mobile Tab Switcher */}
-      <div className={`sm:hidden px-6 pt-4 grid ${isMasterAdmin ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5`}>
+      <div className={`sm:hidden px-6 pt-4 grid ${isMasterAdmin ? 'grid-cols-4' : 'grid-cols-2'} gap-1.5`}>
         <button
           onClick={() => setActiveTab('session')}
           className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
@@ -769,17 +813,30 @@ const AdminDashboard = () => {
           <span>Emails</span>
         </button>
         {isMasterAdmin && (
-          <button
-            onClick={() => setActiveTab('location')}
-            className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
-              activeTab === 'location'
-                ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
-                : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
-            }`}
-          >
-            <MapPin size={13} className="text-rose-500" />
-            <span>Venue</span>
-          </button>
+          <>
+            <button
+              onClick={() => setActiveTab('location')}
+              className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
+                activeTab === 'location'
+                  ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
+                  : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
+              }`}
+            >
+              <MapPin size={13} className="text-rose-500" />
+              <span>Venue</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('admins')}
+              className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
+                activeTab === 'admins'
+                  ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
+                  : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
+              }`}
+            >
+              <Users size={13} className="text-purple-500" />
+              <span>Admins</span>
+            </button>
+          </>
         )}
       </div>
 
@@ -1977,6 +2034,203 @@ const AdminDashboard = () => {
 
               </div>
 
+            </div>
+
+          </div>
+        )}
+
+        {/* TAB 4: Administrator Accounts Directory (Master Admin Only) */}
+        {isMasterAdmin && activeTab === 'admins' && (
+          <div className="space-y-6">
+            
+            {/* Top Banner */}
+            <div className="bg-gradient-to-r from-purple-950 via-zinc-950 to-purple-950 text-white rounded-3xl p-6 md:p-8 shadow-xl border border-purple-800/40 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+              <div className="flex items-center space-x-4">
+                <div className="p-3.5 bg-purple-500/20 text-purple-400 rounded-2xl border border-purple-500/30 shrink-0">
+                  <Users size={30} />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2.5">
+                    <h2 className="text-xl md:text-2xl font-black tracking-tight">Administrator Accounts Directory</h2>
+                    <span className="bg-purple-500/20 text-purple-300 text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-purple-500/30">
+                      👑 MASTER ADMIN
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-1 max-w-xl">
+                    Full oversight of all registered administrators, instructors, active sessions, and student whitelist capacities across the institution.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={fetchAdminsList}
+                  disabled={loadingAdmins}
+                  className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={loadingAdmins ? "animate-spin" : ""} />
+                  <span>Refresh Admin List</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Metrics Bar */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center space-x-4">
+                <div className="p-3 bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400 rounded-xl border border-purple-200 dark:border-purple-800">
+                  <ShieldCheck size={24} />
+                </div>
+                <div>
+                  <p className="text-2xl font-black font-mono text-zinc-900 dark:text-zinc-100">{adminsList.length}</p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">Registered Admins</p>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center space-x-4">
+                <div className="p-3 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                  <Radio size={24} className="text-emerald-500" />
+                </div>
+                <div>
+                  <p className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400">
+                    {adminsList.filter(a => a.active_session_id !== null).length}
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">Live Active Sessions</p>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center space-x-4">
+                <div className="p-3 bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 rounded-xl border border-blue-200 dark:border-blue-800">
+                  <Users size={24} />
+                </div>
+                <div>
+                  <p className="text-2xl font-black font-mono text-zinc-900 dark:text-zinc-100">
+                    {adminsList.reduce((acc, curr) => acc + (curr.whitelisted_students_count || 0), 0)}
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">Total Whitelisted Students</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Administrators Table Card */}
+            <div className="bg-white dark:bg-zinc-900/90 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+              <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-50/50 dark:bg-zinc-900/50">
+                <div>
+                  <h3 className="text-base font-black uppercase tracking-wider text-black dark:text-white">
+                    Administrator Accounts & Assigned Rosters
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    Live overview of administrators, session activity, and authorized student counts
+                  </p>
+                </div>
+
+                {/* Search Bar */}
+                <div className="relative w-full sm:w-64">
+                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                  <input
+                    type="text"
+                    placeholder="Search admin name or email..."
+                    value={adminSearchQuery}
+                    onChange={(e) => setAdminSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-black dark:focus:border-white transition"
+                  />
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-zinc-100/90 dark:bg-zinc-950/90 border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-mono uppercase tracking-wider text-zinc-600 dark:text-zinc-400 font-bold">
+                      <th className="p-4 pl-6">Administrator Profile</th>
+                      <th className="p-4">Role & Privilege</th>
+                      <th className="p-4">Session Status</th>
+                      <th className="p-4">Conducted Sessions</th>
+                      <th className="p-4">Authorized Students</th>
+                      <th className="p-4">Total Attendances</th>
+                      <th className="p-4 pr-6">Registered (IST)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 text-sm">
+                    {adminsList.filter(a => 
+                      !adminSearchQuery || 
+                      a.full_name?.toLowerCase().includes(adminSearchQuery.toLowerCase()) || 
+                      a.email.toLowerCase().includes(adminSearchQuery.toLowerCase())
+                    ).length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-12 text-center text-zinc-400 dark:text-zinc-600 font-mono text-xs">
+                          {adminSearchQuery ? "No administrators matching your search query." : "No administrator accounts found."}
+                        </td>
+                      </tr>
+                    ) : (
+                      adminsList
+                        .filter(a => 
+                          !adminSearchQuery || 
+                          a.full_name?.toLowerCase().includes(adminSearchQuery.toLowerCase()) || 
+                          a.email.toLowerCase().includes(adminSearchQuery.toLowerCase())
+                        )
+                        .map((adminItem) => (
+                          <tr key={adminItem.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
+                            <td className="p-4 pl-6">
+                              <div className="flex items-center space-x-3">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs ${
+                                  adminItem.is_master 
+                                    ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800' 
+                                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700'
+                                }`}>
+                                  {adminItem.full_name ? adminItem.full_name.charAt(0).toUpperCase() : 'A'}
+                                </div>
+                                <div>
+                                  <div className="font-bold text-zinc-900 dark:text-zinc-100 text-sm">
+                                    {adminItem.full_name}
+                                  </div>
+                                  <div className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">
+                                    {adminItem.email}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              {adminItem.is_master ? (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 border border-purple-300 dark:border-purple-800">
+                                  <span>👑 Master Admin</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">
+                                  Class Instructor
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-4">
+                              {adminItem.active_session_id ? (
+                                <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 animate-pulse">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                  <span>Live (Session #{adminItem.active_session_id})</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                                  Idle / Closed
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-4 font-mono text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                              {adminItem.sessions_count} {adminItem.sessions_count === 1 ? 'Session' : 'Sessions'}
+                            </td>
+                            <td className="p-4">
+                              <span className="font-mono text-xs font-bold text-zinc-800 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800/80 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                                {adminItem.whitelisted_students_count} Students
+                              </span>
+                            </td>
+                            <td className="p-4 font-mono text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                              {adminItem.total_attendance_marked} Records
+                            </td>
+                            <td className="p-4 pr-6 text-xs text-zinc-500 dark:text-zinc-400 font-mono">
+                              {adminItem.created_at || '—'}
+                            </td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
           </div>

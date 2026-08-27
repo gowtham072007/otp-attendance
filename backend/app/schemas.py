@@ -138,6 +138,15 @@ class AutoOTPResponse(BaseModel):
     email_sent: bool
     student_email: str
     distance_meters: float
-    venue_name: str
+    venue_name: Optional[str] = None
 
-
+class AdminAccountSummary(BaseModel):
+    id: int
+    full_name: Optional[str] = "Administrator"
+    email: str
+    is_master: bool = False
+    sessions_count: int = 0
+    active_session_id: Optional[int] = None
+    whitelisted_students_count: int = 0
+    total_attendance_marked: int = 0
+    created_at: Optional[str] = None
