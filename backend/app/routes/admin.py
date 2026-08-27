@@ -731,6 +731,12 @@ def get_geofence_settings(db: Session = Depends(get_db), admin: User = Depends(g
 
 @router.post("/geofence", response_model=GeofenceConfigResponse)
 def update_geofence_settings(payload: GeofenceConfigUpdate, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    if not is_master_admin(admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Only the Master Administrator can configure or modify venue geofence location settings."
+        )
+
     config = get_active_geofence(db)
     if payload.venue_name:
         config.venue_name = payload.venue_name.strip()

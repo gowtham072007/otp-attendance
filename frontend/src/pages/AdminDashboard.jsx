@@ -29,7 +29,9 @@ import {
   LocateFixed,
   Navigation,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  Shield,
+  Lock
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -64,6 +66,7 @@ const formatISTDateTime = (dateStr) => {
 
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
+  const isMasterAdmin = user?.email?.toLowerCase() === 'admin@example.com';
   const [activeTab, setActiveTab] = useState('session'); // 'session' | 'whitelist'
   const [session, setSession] = useState(null);
   const [otp, setOtp] = useState(null);
@@ -1665,6 +1668,20 @@ const AdminDashboard = () => {
               <div className="lg:col-span-2 space-y-6">
                 
                 {/* Status / Alert Messages */}
+                {!isMasterAdmin && (
+                  <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/80 text-amber-800 dark:text-amber-200 px-5 py-4 rounded-2xl text-xs font-medium flex items-start space-x-3 shadow-xs">
+                    <Shield size={18} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold uppercase tracking-wider text-[11px] font-mono text-amber-900 dark:text-amber-300">
+                        Protected Setting: Master Admin Only
+                      </div>
+                      <div className="mt-1 text-zinc-600 dark:text-zinc-400">
+                        Attendance venue coordinates and geofence radius settings are centrally managed and can strictly only be updated by the Master Administrator (<span className="font-mono font-semibold text-zinc-900 dark:text-zinc-200">admin@example.com</span>). Active settings are displayed in read-only mode.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {geofenceSuccess && (
                   <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 px-4 py-3 rounded-2xl text-xs font-semibold flex items-center space-x-2">
                     <Check size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -1679,45 +1696,62 @@ const AdminDashboard = () => {
                   </div>
                 )}
 
-                {/* 1-Click GPS Capture Action Card */}
-                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs relative overflow-hidden">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                      <h3 className="font-bold text-base flex items-center space-x-2">
-                        <LocateFixed size={18} className="text-rose-500" />
-                        <span>Acquire Admin GPS Coordinates</span>
-                      </h3>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                        Use your device's built-in GPS sensor to set the venue location to wherever you are currently standing.
-                      </p>
-                      {adminGpsAccuracy !== null && (
-                        <div className="mt-2 text-xs font-mono text-emerald-600 dark:text-emerald-400 font-bold flex items-center space-x-1">
-                          <Check size={12} className="stroke-[3]" />
-                          <span>GPS Accuracy: ~{adminGpsAccuracy}m radius</span>
-                        </div>
-                      )}
-                    </div>
+                {/* 1-Click GPS Capture Action Card (Master Admin Only) */}
+                {isMasterAdmin ? (
+                  <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs relative overflow-hidden">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <h3 className="font-bold text-base flex items-center space-x-2">
+                          <LocateFixed size={18} className="text-rose-500" />
+                          <span>Acquire Admin GPS Coordinates</span>
+                          <span className="bg-purple-100 dark:bg-purple-950/80 text-purple-800 dark:text-purple-300 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800">
+                            👑 Master Admin
+                          </span>
+                        </h3>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                          Use your device's built-in GPS sensor to set the venue location to wherever you are currently standing.
+                        </p>
+                        {adminGpsAccuracy !== null && (
+                          <div className="mt-2 text-xs font-mono text-emerald-600 dark:text-emerald-400 font-bold flex items-center space-x-1">
+                            <Check size={12} className="stroke-[3]" />
+                            <span>GPS Accuracy: ~{adminGpsAccuracy}m radius</span>
+                          </div>
+                        )}
+                      </div>
 
-                    <button
-                      type="button"
-                      onClick={handleAcquireAdminGPS}
-                      disabled={locatingAdmin}
-                      className="flex items-center justify-center space-x-2 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white px-5 py-3 rounded-2xl font-mono text-xs font-bold tracking-wider uppercase transition shadow-md disabled:opacity-50 shrink-0 cursor-pointer"
-                    >
-                      {locatingAdmin ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                          <span>Acquiring GPS...</span>
-                        </>
-                      ) : (
-                        <>
-                          <LocateFixed size={16} />
-                          <span>Acquire My Location</span>
-                        </>
-                      )}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={handleAcquireAdminGPS}
+                        disabled={locatingAdmin}
+                        className="flex items-center justify-center space-x-2 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white px-5 py-3 rounded-2xl font-mono text-xs font-bold tracking-wider uppercase transition shadow-md disabled:opacity-50 shrink-0 cursor-pointer"
+                      >
+                        {locatingAdmin ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                            <span>Acquiring GPS...</span>
+                          </>
+                        ) : (
+                          <>
+                            <LocateFixed size={16} />
+                            <span>Acquire My Location</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="bg-zinc-50 dark:bg-zinc-900/50 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2.5 bg-zinc-200 dark:bg-zinc-800 rounded-xl text-zinc-500 dark:text-zinc-400">
+                        <Lock size={16} />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Live GPS Override Locked</div>
+                        <div className="text-[11px] text-zinc-500">Only the Master Administrator can capture live GPS coordinates.</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Geofence Form Card */}
                 <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
@@ -1731,10 +1765,12 @@ const AdminDashboard = () => {
                       <input
                         type="text"
                         required
+                        disabled={!isMasterAdmin}
+                        readOnly={!isMasterAdmin}
                         value={geofenceForm.venue_name}
                         onChange={(e) => setGeofenceForm({ ...geofenceForm, venue_name: e.target.value })}
                         placeholder="e.g. Francis Xavier Engineering College - Auditorium"
-                        className="w-full px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-rose-500 transition text-sm font-medium"
+                        className="w-full px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-rose-500 transition text-sm font-medium disabled:bg-zinc-100 dark:disabled:bg-zinc-900 disabled:text-zinc-500 disabled:cursor-not-allowed"
                       />
                     </div>
 
@@ -1748,10 +1784,12 @@ const AdminDashboard = () => {
                           type="number"
                           step="any"
                           required
+                          disabled={!isMasterAdmin}
+                          readOnly={!isMasterAdmin}
                           value={geofenceForm.latitude}
                           onChange={(e) => setGeofenceForm({ ...geofenceForm, latitude: e.target.value })}
                           placeholder="8.732309"
-                          className="w-full px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-rose-500 transition text-sm font-mono"
+                          className="w-full px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-rose-500 transition text-sm font-mono disabled:bg-zinc-100 dark:disabled:bg-zinc-900 disabled:text-zinc-500 disabled:cursor-not-allowed"
                         />
                       </div>
 
@@ -1763,10 +1801,12 @@ const AdminDashboard = () => {
                           type="number"
                           step="any"
                           required
+                          disabled={!isMasterAdmin}
+                          readOnly={!isMasterAdmin}
                           value={geofenceForm.longitude}
                           onChange={(e) => setGeofenceForm({ ...geofenceForm, longitude: e.target.value })}
                           placeholder="77.723764"
-                          className="w-full px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-rose-500 transition text-sm font-mono"
+                          className="w-full px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-rose-500 transition text-sm font-mono disabled:bg-zinc-100 dark:disabled:bg-zinc-900 disabled:text-zinc-500 disabled:cursor-not-allowed"
                         />
                       </div>
                     </div>
@@ -1782,61 +1822,74 @@ const AdminDashboard = () => {
                         </span>
                       </div>
 
-                      <input
-                        type="range"
-                        min="20"
-                        max="1500"
-                        step="10"
-                        value={geofenceForm.radius_meters}
-                        onChange={(e) => setGeofenceForm({ ...geofenceForm, radius_meters: Number(e.target.value) })}
-                        className="w-full accent-rose-600 h-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg cursor-pointer"
-                      />
+                      {isMasterAdmin && (
+                        <>
+                          <input
+                            type="range"
+                            min="20"
+                            max="1500"
+                            step="10"
+                            value={geofenceForm.radius_meters}
+                            onChange={(e) => setGeofenceForm({ ...geofenceForm, radius_meters: Number(e.target.value) })}
+                            className="w-full accent-rose-600 h-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg cursor-pointer"
+                          />
 
-                      {/* Quick Radius Preset Chips */}
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        {[
-                          { label: '50m (Classroom / Lab)', value: 50 },
-                          { label: '100m (Department Wing)', value: 100 },
-                          { label: '250m (Academic Block)', value: 250 },
-                          { label: '500m (Campus Perimeter)', value: 500 },
-                          { label: '1000m (Extended Area)', value: 1000 }
-                        ].map((preset) => (
-                          <button
-                            key={preset.value}
-                            type="button"
-                            onClick={() => setGeofenceForm({ ...geofenceForm, radius_meters: preset.value })}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-mono transition cursor-pointer ${
-                              geofenceForm.radius_meters === preset.value
-                                ? 'bg-black text-white dark:bg-white dark:text-black font-bold shadow-xs'
-                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white border border-zinc-200 dark:border-zinc-700'
-                            }`}
-                          >
-                            {preset.label}
-                          </button>
-                        ))}
-                      </div>
+                          {/* Quick Radius Preset Chips */}
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {[
+                              { label: '50m (Classroom / Lab)', value: 50 },
+                              { label: '100m (Department Wing)', value: 100 },
+                              { label: '250m (Academic Block)', value: 250 },
+                              { label: '500m (Campus Perimeter)', value: 500 },
+                              { label: '1000m (Extended Area)', value: 1000 }
+                            ].map((preset) => (
+                              <button
+                                key={preset.value}
+                                type="button"
+                                onClick={() => setGeofenceForm({ ...geofenceForm, radius_meters: preset.value })}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-mono transition cursor-pointer ${
+                                  geofenceForm.radius_meters === preset.value
+                                    ? 'bg-black text-white dark:bg-white dark:text-black font-bold shadow-xs'
+                                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white border border-zinc-200 dark:border-zinc-700'
+                                }`}
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {/* Submit Button */}
-                    <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={geofenceSaving}
-                        className="flex items-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white px-6 py-3.5 rounded-2xl font-mono text-xs font-bold tracking-wider uppercase transition shadow-md disabled:opacity-50 cursor-pointer"
-                      >
-                        {geofenceSaving ? (
-                          <>
-                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent"></div>
-                            <span>Saving Changes...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Check size={15} className="stroke-[3]" />
-                            <span>Save & Activate Venue Location</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
+                    {isMasterAdmin ? (
+                      <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end">
+                        <button
+                          type="submit"
+                          disabled={geofenceSaving}
+                          className="flex items-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white px-6 py-3.5 rounded-2xl font-mono text-xs font-bold tracking-wider uppercase transition shadow-md disabled:opacity-50 cursor-pointer"
+                        >
+                          {geofenceSaving ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent"></div>
+                              <span>Saving Changes...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check size={15} className="stroke-[3]" />
+                              <span>Save & Activate Venue Location</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end">
+                        <div className="flex items-center space-x-2 text-xs font-mono text-zinc-400 dark:text-zinc-500 py-2">
+                          <Lock size={14} />
+                          <span>Venue location configuration managed by Master Admin</span>
+                        </div>
+                      </div>
+                    )}
                   </form>
                 </div>
 
