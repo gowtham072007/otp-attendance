@@ -114,21 +114,33 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
             "absent_list": []
         }
         
-    # Get attendance records for this session
-    attendance_records = db.query(AttendanceRecord).filter(AttendanceRecord.session_id == target_session.id).all()
+    # Get all admin user IDs and emails to strictly exclude from student attendance
+    admin_users = db.query(User).filter(User.role == "ADMIN").all()
+    admin_emails = {a.email.lower().strip() for a in admin_users if a.email}
+    admin_ids = {a.id for a in admin_users}
+
+    # Get attendance records for this session (excluding any admins)
+    attendance_records = db.query(AttendanceRecord).join(User, AttendanceRecord.user_id == User.id).filter(
+        AttendanceRecord.session_id == target_session.id,
+        User.role == "USER"
+    ).all()
     present_user_ids = {r.user_id: r for r in attendance_records}
     
-    # Get all whitelisted emails
+    # Get all whitelisted student emails (excluding admin emails)
     allowed_list = db.query(AllowedEmail).all()
-    # Also get all regular users
+    # Also get all regular students
     regular_users = db.query(User).filter(User.role == "USER").all()
     user_by_email = {u.email.lower().strip(): u for u in regular_users}
     
-    # Build student roster
+    # Build student roster (Strictly non-admins)
     roster = {}
     for allowed in allowed_list:
         clean_email = allowed.email.lower().strip()
+        if clean_email in admin_emails:
+            continue
         user_obj = user_by_email.get(clean_email)
+        if user_obj and user_obj.role == "ADMIN":
+            continue
         name = user_obj.full_name if (user_obj and user_obj.full_name) else (allowed.name or "Registered Student")
         user_id = user_obj.id if user_obj else None
         roster[clean_email] = {
@@ -137,10 +149,12 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
             "user_id": user_id
         }
         
-    # If no whitelist entries exist, fallback to all registered USERs
-    if not allowed_list:
+    # If no whitelist entries exist, fallback to all registered regular USERs
+    if not roster:
         for u in regular_users:
             clean_email = u.email.lower().strip()
+            if clean_email in admin_emails:
+                continue
             roster[clean_email] = {
                 "email": u.email,
                 "name": u.full_name,
@@ -149,9 +163,9 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
             
     # Also include any student who attended but might not be in whitelist
     for r in attendance_records:
-        if r.user:
+        if r.user and r.user.role == "USER":
             clean_email = r.user.email.lower().strip()
-            if clean_email not in roster:
+            if clean_email not in admin_emails and clean_email not in roster:
                 roster[clean_email] = {
                     "email": r.user.email,
                     "name": r.user.full_name,
@@ -160,7 +174,7 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None):
 
     # Get all active linked devices
     devices = db.query(UserDevice).filter(UserDevice.is_linked == True).all()
-    device_by_user_id = {d.user_id: d for d in devices}
+    device_by_user_id = {d.user_id: d for d in devices if d.user_id not in admin_ids}
 
     records = []
     present_list = []
@@ -264,7 +278,10 @@ def get_all_sessions(db: Session = Depends(get_db), admin: User = Depends(get_cu
     sessions = db.query(AttendanceSession).order_by(AttendanceSession.id.desc()).all()
     result = []
     for s in sessions:
-        count = db.query(AttendanceRecord).filter(AttendanceRecord.session_id == s.id).count()
+        count = db.query(AttendanceRecord).join(User, AttendanceRecord.user_id == User.id).filter(
+            AttendanceRecord.session_id == s.id,
+            User.role == "USER"
+        ).count()
         result.append({
             "id": s.id,
             "status": s.status,
@@ -451,6 +468,12 @@ def manual_mark_attendance(payload: ManualAttendanceRequest, db: Session = Depen
     
     # 2. Find or Provision the Student User
     user = db.query(User).filter(User.email.ilike(clean_email)).first()
+    if user and user.role == "ADMIN":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot mark attendance for an Administrator. Attendance records are strictly for students only."
+        )
+
     if not user:
         # Check AllowedEmail for display name or use payload.name or fallback to email username
         allowed = db.query(AllowedEmail).filter(AllowedEmail.email.ilike(clean_email)).first()

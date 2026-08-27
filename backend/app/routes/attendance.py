@@ -132,6 +132,13 @@ def auto_dispatch_otp(
     Automatically verifies student GPS location against the geofence and dispatches
     the active attendance OTP to the student's device and registered email.
     """
+    # 0. Role check: Only students can request an attendance OTP
+    if current_user.role != "USER":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Only students can request an attendance OTP. Administrator accounts are excluded."
+        )
+
     # 1. Device lock check (for students)
     if current_user.role == "USER" and current_user.device:
         client_device_id = request.headers.get("X-Device-Id")
@@ -230,6 +237,13 @@ def auto_dispatch_otp(
 
 @router.post("/mark")
 def mark_attendance(submission: AttendanceSubmission, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Role check: Only students can mark attendance
+    if current_user.role != "USER":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Only students can mark attendance. Administrator accounts are excluded from Attendance Records."
+        )
+
     # Device lock check
     if current_user.role == "USER" and current_user.device:
         client_device_id = request.headers.get("X-Device-Id")

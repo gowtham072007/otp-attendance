@@ -51,6 +51,13 @@ def migrate_db():
             except Exception:
                 pass
 
+        # Purge any legacy attendance records belonging to Admin accounts
+        try:
+            conn.execute(text("DELETE FROM attendance_records WHERE user_id IN (SELECT id FROM users WHERE role = 'ADMIN')"))
+            conn.commit()
+        except Exception:
+            pass
+
 migrate_db()
 
 def seed_initial_admin():
