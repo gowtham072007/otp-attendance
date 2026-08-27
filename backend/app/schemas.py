@@ -23,6 +23,7 @@ class UserResponse(UserBase):
     id: int
     google_id: str
     created_at: datetime
+    is_master_admin: bool = False
     device: Optional[UserDeviceResponse] = None
     
     class Config:

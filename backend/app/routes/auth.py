@@ -143,6 +143,12 @@ def direct_login(request: DirectLoginRequest, db: Session = Depends(get_db)):
 
 
 
+def to_user_response(user: User) -> UserResponse:
+    is_master = bool(user.email and user.email.strip().lower() == INITIAL_ADMIN_EMAIL and user.role == "ADMIN")
+    resp = UserResponse.model_validate(user)
+    resp.is_master_admin = is_master
+    return resp
+
 @router.post("/admin/login", response_model=Token)
 def admin_login(request: AdminLoginRequest, db: Session = Depends(get_db)):
     email = request.email.strip().lower()
@@ -201,7 +207,7 @@ def admin_login(request: AdminLoginRequest, db: Session = Depends(get_db)):
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": user
+        "user": to_user_response(user)
     }
 
 
@@ -265,10 +271,10 @@ def admin_register(request: AdminRegisterRequest, db: Session = Depends(get_db))
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": user
+        "user": to_user_response(user)
     }
 
 
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
+    return to_user_response(current_user)

@@ -66,13 +66,20 @@ const formatISTDateTime = (dateStr) => {
 
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
-  const isMasterAdmin = user?.email?.toLowerCase() === 'admin@example.com';
+  const isMasterAdmin = Boolean(user?.is_master_admin || user?.email?.toLowerCase() === 'admin@example.com');
   const [activeTab, setActiveTab] = useState('session'); // 'session' | 'whitelist'
   const [session, setSession] = useState(null);
   const [otp, setOtp] = useState(null);
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(true);
   const [currentISTTime, setCurrentISTTime] = useState('');
+
+  // Fallback if regular admin ever attempts to view location tab
+  useEffect(() => {
+    if (!isMasterAdmin && activeTab === 'location') {
+      setActiveTab('session');
+    }
+  }, [isMasterAdmin, activeTab]);
 
   // Attendance & Sessions state
   const [attendanceReport, setAttendanceReport] = useState({
