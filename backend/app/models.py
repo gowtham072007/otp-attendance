@@ -80,9 +80,16 @@ class AllowedEmail(Base):
     __tablename__ = "allowed_emails"
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
+    admin_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    email = Column(String, index=True, nullable=False)
     name = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    admin = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint('admin_id', 'email', name='_admin_email_uc'),
+    )
 
 class GeofenceConfig(Base):
     __tablename__ = "geofence_configs"

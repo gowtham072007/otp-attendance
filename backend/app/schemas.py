@@ -109,6 +109,7 @@ class AllowedEmailBulkCreate(BaseModel):
 
 class AllowedEmailResponse(BaseModel):
     id: int
+    admin_id: Optional[int] = None
     email: str
     name: Optional[str] = None
     created_at: datetime

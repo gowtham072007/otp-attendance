@@ -138,13 +138,18 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
     ).all()
     present_user_ids = {r.user_id: r for r in attendance_records}
     
-    # Get all whitelisted student emails (excluding admin emails)
-    allowed_list = db.query(AllowedEmail).all()
+    # Get all whitelisted student emails for this specific admin (excluding admin emails)
+    target_admin_id = target_session.admin_id if target_session else admin_id
+    if target_admin_id:
+        allowed_list = db.query(AllowedEmail).filter(AllowedEmail.admin_id == target_admin_id).all()
+    else:
+        allowed_list = db.query(AllowedEmail).all()
+        
     # Also get all regular students
     regular_users = db.query(User).filter(User.role == "USER").all()
     user_by_email = {u.email.lower().strip(): u for u in regular_users}
     
-    # Build student roster (Strictly non-admins)
+    # Build student roster (Strictly non-admins and strictly this admin's authorized students)
     roster = {}
     for allowed in allowed_list:
         clean_email = allowed.email.lower().strip()
@@ -161,19 +166,7 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
             "user_id": user_id
         }
         
-    # If no whitelist entries exist, fallback to all registered regular USERs
-    if not roster:
-        for u in regular_users:
-            clean_email = u.email.lower().strip()
-            if clean_email in admin_emails:
-                continue
-            roster[clean_email] = {
-                "email": u.email,
-                "name": u.full_name,
-                "user_id": u.id
-            }
-            
-    # Also include any student who attended but might not be in whitelist
+    # Also include any student who attended this session
     for r in attendance_records:
         if r.user and r.user.role == "USER":
             clean_email = r.user.email.lower().strip()
@@ -571,7 +564,9 @@ def manual_mark_attendance(payload: ManualAttendanceRequest, db: Session = Depen
 @router.get("/allowed-emails", response_model=List[AllowedEmailResponse])
 def get_allowed_emails(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     admin_emails = {a.email.lower().strip() for a in db.query(User).filter(User.role == "ADMIN").all() if a.email}
-    all_allowed = db.query(AllowedEmail).order_by(AllowedEmail.created_at.desc()).all()
+    all_allowed = db.query(AllowedEmail).filter(
+        AllowedEmail.admin_id == admin.id
+    ).order_by(AllowedEmail.created_at.desc()).all()
     return [a for a in all_allowed if a.email.lower().strip() not in admin_emails]
 
 @router.post("/allowed-emails", response_model=AllowedEmailResponse)
@@ -591,12 +586,16 @@ def add_allowed_email(payload: AllowedEmailCreate, db: Session = Depends(get_db)
             detail="Cannot add an Administrator account to the Student Whitelist. Whitelist and Attendance records are strictly for students only."
         )
 
-    # Check if already exists
-    existing = db.query(AllowedEmail).filter(AllowedEmail.email == email_clean).first()
+    # Check if already exists for this admin
+    existing = db.query(AllowedEmail).filter(
+        AllowedEmail.admin_id == admin.id,
+        func.lower(AllowedEmail.email) == email_clean
+    ).first()
     if existing:
-        raise HTTPException(status_code=400, detail=f"Email '{email_clean}' is already registered in the allowed list")
+        raise HTTPException(status_code=400, detail=f"Student email '{email_clean}' is already in your authorized list")
     
     new_allowed = AllowedEmail(
+        admin_id=admin.id,
         email=email_clean,
         name=payload.name.strip() if payload.name else None
     )
@@ -627,12 +626,15 @@ def add_bulk_allowed_emails(payload: AllowedEmailBulkCreate, db: Session = Depen
             errors.append(f"Skipped admin account email: {raw_email}")
             continue
 
-        existing = db.query(AllowedEmail).filter(AllowedEmail.email == clean).first()
+        existing = db.query(AllowedEmail).filter(
+            AllowedEmail.admin_id == admin.id,
+            func.lower(AllowedEmail.email) == clean
+        ).first()
         if existing:
             skipped_count += 1
             continue
             
-        new_entry = AllowedEmail(email=clean, name=None)
+        new_entry = AllowedEmail(admin_id=admin.id, email=clean, name=None)
         db.add(new_entry)
         added_count += 1
         
@@ -646,13 +648,16 @@ def add_bulk_allowed_emails(payload: AllowedEmailBulkCreate, db: Session = Depen
 
 @router.delete("/allowed-emails/{email_id}")
 def delete_allowed_email(email_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    record = db.query(AllowedEmail).filter(AllowedEmail.id == email_id).first()
+    record = db.query(AllowedEmail).filter(
+        AllowedEmail.id == email_id,
+        AllowedEmail.admin_id == admin.id
+    ).first()
     if not record:
-        raise HTTPException(status_code=404, detail="Allowed email record not found")
+        raise HTTPException(status_code=404, detail="Authorized student record not found in your list.")
     
     db.delete(record)
     db.commit()
-    return {"message": "Allowed email removed successfully"}
+    return {"message": "Student removed from your authorized list successfully"}
 
 # --- Student Device Reset Endpoints ---
 

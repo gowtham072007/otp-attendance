@@ -56,6 +56,16 @@ def migrate_db():
             except Exception:
                 pass
 
+        # Check and add columns to allowed_emails
+        for col_name, col_type in [
+            ("admin_id", "INTEGER")
+        ]:
+            try:
+                conn.execute(text(f"ALTER TABLE allowed_emails ADD COLUMN {col_name} {col_type}"))
+                conn.commit()
+            except Exception:
+                pass
+
         # Purge any legacy attendance records belonging to Admin accounts
         try:
             conn.execute(text("DELETE FROM attendance_records WHERE user_id IN (SELECT id FROM users WHERE role = 'ADMIN')"))
