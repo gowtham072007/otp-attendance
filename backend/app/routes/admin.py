@@ -39,6 +39,12 @@ except (ImportError, ValueError):
     from app.auth.utils import get_current_admin
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+INITIAL_ADMIN_EMAIL = os.getenv("INITIAL_ADMIN_EMAIL", "admin@example.com").strip().lower()
+
+def is_master_admin(admin: User) -> bool:
+    if not admin or not admin.email:
+        return False
+    return admin.email.strip().lower() == INITIAL_ADMIN_EMAIL
 
 # --- Indian Standard Time (IST) Helpers ---
 
@@ -564,10 +570,33 @@ def manual_mark_attendance(payload: ManualAttendanceRequest, db: Session = Depen
 @router.get("/allowed-emails", response_model=List[AllowedEmailResponse])
 def get_allowed_emails(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     admin_emails = {a.email.lower().strip() for a in db.query(User).filter(User.role == "ADMIN").all() if a.email}
-    all_allowed = db.query(AllowedEmail).filter(
-        AllowedEmail.admin_id == admin.id
-    ).order_by(AllowedEmail.created_at.desc()).all()
-    return [a for a in all_allowed if a.email.lower().strip() not in admin_emails]
+    all_admins = {u.id: u for u in db.query(User).filter(User.role == "ADMIN").all()}
+
+    # Master Admin sees ALL authorized students across all admins; regular admin sees only their own
+    if is_master_admin(admin):
+        records = db.query(AllowedEmail).order_by(AllowedEmail.created_at.desc()).all()
+    else:
+        records = db.query(AllowedEmail).filter(
+            AllowedEmail.admin_id == admin.id
+        ).order_by(AllowedEmail.created_at.desc()).all()
+
+    result = []
+    for r in records:
+        if r.email.lower().strip() in admin_emails:
+            continue
+        creator_admin = all_admins.get(r.admin_id) if r.admin_id else None
+        admin_name = creator_admin.full_name if creator_admin else ("Master Administrator" if not r.admin_id else "Administrator")
+        admin_email = creator_admin.email if creator_admin else None
+        result.append(AllowedEmailResponse(
+            id=r.id,
+            admin_id=r.admin_id,
+            admin_name=admin_name,
+            admin_email=admin_email,
+            email=r.email,
+            name=r.name,
+            created_at=r.created_at
+        ))
+    return result
 
 @router.post("/allowed-emails", response_model=AllowedEmailResponse)
 def add_allowed_email(payload: AllowedEmailCreate, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
@@ -602,7 +631,15 @@ def add_allowed_email(payload: AllowedEmailCreate, db: Session = Depends(get_db)
     db.add(new_allowed)
     db.commit()
     db.refresh(new_allowed)
-    return new_allowed
+    return AllowedEmailResponse(
+        id=new_allowed.id,
+        admin_id=new_allowed.admin_id,
+        admin_name=admin.full_name or "Administrator",
+        admin_email=admin.email,
+        email=new_allowed.email,
+        name=new_allowed.name,
+        created_at=new_allowed.created_at
+    )
 
 @router.post("/allowed-emails/bulk")
 def add_bulk_allowed_emails(payload: AllowedEmailBulkCreate, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
@@ -648,16 +685,17 @@ def add_bulk_allowed_emails(payload: AllowedEmailBulkCreate, db: Session = Depen
 
 @router.delete("/allowed-emails/{email_id}")
 def delete_allowed_email(email_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    record = db.query(AllowedEmail).filter(
-        AllowedEmail.id == email_id,
-        AllowedEmail.admin_id == admin.id
-    ).first()
+    query = db.query(AllowedEmail).filter(AllowedEmail.id == email_id)
+    if not is_master_admin(admin):
+        query = query.filter(AllowedEmail.admin_id == admin.id)
+
+    record = query.first()
     if not record:
         raise HTTPException(status_code=404, detail="Authorized student record not found in your list.")
     
     db.delete(record)
     db.commit()
-    return {"message": "Student removed from your authorized list successfully"}
+    return {"message": "Student removed from authorized list successfully"}
 
 # --- Student Device Reset Endpoints ---
 

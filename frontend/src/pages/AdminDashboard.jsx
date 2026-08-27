@@ -1527,8 +1527,19 @@ const AdminDashboard = () => {
             <div className="bg-white dark:bg-zinc-900/90 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 flex flex-col lg:col-span-2 overflow-hidden">
               <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-50/50 dark:bg-zinc-900/50">
                 <div>
-                  <h2 className="text-base font-black uppercase tracking-wider text-black dark:text-white">Authorized Login Whitelist</h2>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Only the emails listed below can log into the portal</p>
+                  <div className="flex items-center space-x-2">
+                    <h2 className="text-base font-black uppercase tracking-wider text-black dark:text-white">Authorized Login Whitelist</h2>
+                    {user?.email?.toLowerCase() === 'admin@example.com' && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-purple-100 dark:bg-purple-950/80 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                        👑 Master Admin (All Lists)
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    {user?.email?.toLowerCase() === 'admin@example.com' 
+                      ? "Showing all authorized students across all administrators" 
+                      : "Only the students you have authorized can log into the portal"}
+                  </p>
                 </div>
 
                 {/* Search Bar */}
@@ -1549,6 +1560,9 @@ const AdminDashboard = () => {
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-zinc-100/90 dark:bg-zinc-950/90 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-mono uppercase tracking-wider text-zinc-600 dark:text-zinc-400 font-bold">
                       <th className="p-4 pl-6">Allowed Email & Student</th>
+                      {user?.email?.toLowerCase() === 'admin@example.com' && (
+                        <th className="p-4">Authorized By</th>
+                      )}
                       <th className="p-4">Added On (IST)</th>
                       <th className="p-4">Status</th>
                       <th className="p-4 text-right pr-6">Action</th>
@@ -1557,7 +1571,7 @@ const AdminDashboard = () => {
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 text-sm">
                     {filteredWhitelistEmails.length === 0 ? (
                       <tr>
-                        <td colSpan="4" className="p-12 text-center text-zinc-400 dark:text-zinc-600 font-mono text-xs">
+                        <td colSpan={user?.email?.toLowerCase() === 'admin@example.com' ? 5 : 4} className="p-12 text-center text-zinc-400 dark:text-zinc-600 font-mono text-xs">
                           {searchQuery ? "No matching emails found." : "No emails saved yet. Add allowed student emails using the form on the left."}
                         </td>
                       </tr>
@@ -1570,6 +1584,16 @@ const AdminDashboard = () => {
                               <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{item.name}</div>
                             )}
                           </td>
+                          {user?.email?.toLowerCase() === 'admin@example.com' && (
+                            <td className="p-4">
+                              <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                                {item.admin_name || "Master Administrator"}
+                              </div>
+                              {item.admin_email && (
+                                <div className="text-[10px] text-zinc-400 font-mono">{item.admin_email}</div>
+                              )}
+                            </td>
+                          )}
                           <td className="p-4 text-xs text-zinc-600 dark:text-zinc-400 font-mono">
                             {formatISTDateTime(item.created_at)}
                           </td>
@@ -1582,7 +1606,7 @@ const AdminDashboard = () => {
                             <button
                               onClick={() => handleDeleteAllowedEmail(item.id, item.email)}
                               title="Remove from allowed list"
-                              className="p-2 rounded-xl text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition"
+                              className="p-2 rounded-xl text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
                             >
                               <Trash2 size={16} />
                             </button>
