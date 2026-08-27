@@ -150,3 +150,8 @@ class AdminAccountSummary(BaseModel):
     whitelisted_students_count: int = 0
     total_attendance_marked: int = 0
     created_at: Optional[str] = None
+
+class CreateAdminByMasterRequest(BaseModel):
+    full_name: str
+    email: str
+    password: str

@@ -2,6 +2,7 @@ import random
 import string
 import csv
 import io
+import uuid
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -21,9 +22,10 @@ try:
         GeofenceConfigResponse,
         GeofenceConfigUpdate,
         ManualAttendanceRequest,
-        AdminAccountSummary
+        AdminAccountSummary,
+        CreateAdminByMasterRequest
     )
-    from ..auth.utils import get_current_admin
+    from ..auth.utils import get_current_admin, hash_password
 except (ImportError, ValueError):
     from app.database import get_db
     from app.models import User, AttendanceSession, OTP, AttendanceRecord, AllowedEmail, UserDevice, GeofenceConfig
@@ -36,9 +38,10 @@ except (ImportError, ValueError):
         GeofenceConfigResponse,
         GeofenceConfigUpdate,
         ManualAttendanceRequest,
-        AdminAccountSummary
+        AdminAccountSummary,
+        CreateAdminByMasterRequest
     )
-    from app.auth.utils import get_current_admin
+    from app.auth.utils import get_current_admin, hash_password
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 INITIAL_ADMIN_EMAIL = os.getenv("INITIAL_ADMIN_EMAIL", "admin@francisxavier.ac.in").strip().lower()
@@ -967,5 +970,104 @@ def get_all_admins(db: Session = Depends(get_db), admin: User = Depends(get_curr
     # Sort Master Admin first, then other admins by id
     results.sort(key=lambda x: (not x.is_master, x.id))
     return results
+
+@router.post("/admins", response_model=AdminAccountSummary)
+def create_admin_by_master(
+    payload: CreateAdminByMasterRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    if not is_master_admin(admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Only the Master Administrator can create new administrator accounts."
+        )
+
+    full_name = payload.full_name.strip()
+    email = payload.email.strip().lower()
+    password = payload.password.strip()
+
+    if not full_name or not email or not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Administrator Name, Email, and Password are all required."
+        )
+
+    if len(password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 6 characters long."
+        )
+
+    existing_user = db.query(User).filter(func.lower(User.email) == email).first()
+    if existing_user:
+        if existing_user.role == "ADMIN" and existing_user.hashed_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"An administrator account with email '{email}' already exists."
+            )
+        existing_user.full_name = full_name
+        existing_user.role = "ADMIN"
+        existing_user.hashed_password = hash_password(password)
+        db.commit()
+        db.refresh(existing_user)
+        user = existing_user
+    else:
+        user = User(
+            email=email,
+            google_id=str(uuid.uuid4()),
+            full_name=full_name,
+            role="ADMIN",
+            hashed_password=hash_password(password)
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    is_master = is_master_admin(user)
+    return AdminAccountSummary(
+        id=user.id,
+        full_name=user.full_name or "Administrator",
+        email=user.email,
+        is_master=is_master,
+        sessions_count=0,
+        active_session_id=None,
+        whitelisted_students_count=0,
+        total_attendance_marked=0,
+        created_at=format_ist_date(user.created_at) if hasattr(user, 'created_at') and user.created_at else datetime.now(IST).strftime("%d-%m-%Y")
+    )
+
+@router.delete("/admins/{admin_id}")
+def delete_admin_by_master(
+    admin_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    if not is_master_admin(admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Only the Master Administrator can delete administrator accounts."
+        )
+        
+    target_admin = db.query(User).filter(User.id == admin_id, User.role == "ADMIN").first()
+    if not target_admin:
+        raise HTTPException(status_code=404, detail="Administrator account not found.")
+        
+    if is_master_admin(target_admin):
+        raise HTTPException(status_code=400, detail="The Master Administrator account is protected and cannot be deleted.")
+        
+    # Clean up associated whitelist and sessions
+    db.query(AllowedEmail).filter(AllowedEmail.admin_id == target_admin.id).delete()
+    
+    sessions = db.query(AttendanceSession).filter(AttendanceSession.admin_id == target_admin.id).all()
+    for s in sessions:
+        db.query(AttendanceRecord).filter(AttendanceRecord.session_id == s.id).delete()
+        db.query(OTP).filter(OTP.session_id == s.id).delete()
+        db.delete(s)
+        
+    admin_email = target_admin.email
+    db.delete(target_admin)
+    db.commit()
+    return {"message": f"Administrator '{admin_email}' removed successfully."}
 
 

@@ -31,7 +31,9 @@ import {
   ExternalLink,
   ShieldCheck,
   Shield,
-  Lock
+  Lock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -79,6 +81,12 @@ const AdminDashboard = () => {
   const [adminsList, setAdminsList] = useState([]);
   const [loadingAdmins, setLoadingAdmins] = useState(false);
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
+  const [createAdminModalOpen, setCreateAdminModalOpen] = useState(false);
+  const [newAdminForm, setNewAdminForm] = useState({ full_name: '', email: '', password: '' });
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
+  const [createAdminError, setCreateAdminError] = useState('');
+  const [createAdminSuccess, setCreateAdminSuccess] = useState('');
 
   // Fallback if regular admin ever attempts to view protected tabs
   useEffect(() => {
@@ -255,6 +263,61 @@ const AdminDashboard = () => {
       console.error("Failed to load administrators list", err);
     } finally {
       setLoadingAdmins(false);
+    }
+  };
+
+  const handleCreateAdmin = async (e) => {
+    e.preventDefault();
+    setCreateAdminError('');
+    setCreateAdminSuccess('');
+
+    if (!newAdminForm.full_name.trim() || !newAdminForm.email.trim() || !newAdminForm.password.trim()) {
+      setCreateAdminError('Please fill in all fields (Name, Email, and Password).');
+      return;
+    }
+
+    if (newAdminForm.password.length < 6) {
+      setCreateAdminError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    setCreatingAdmin(true);
+    try {
+      const res = await api.post('/admin/admins', {
+        full_name: newAdminForm.full_name.trim(),
+        email: newAdminForm.email.trim(),
+        password: newAdminForm.password.trim()
+      });
+      setCreateAdminSuccess(`Administrator account for ${res.data.email} created successfully!`);
+      setNewAdminForm({ full_name: '', email: '', password: '' });
+      await fetchAdminsList();
+      setTimeout(() => {
+        setCreateAdminModalOpen(false);
+        setCreateAdminSuccess('');
+      }, 1500);
+    } catch (err) {
+      console.error("Failed to create administrator account", err);
+      setCreateAdminError(err.response?.data?.detail || "Failed to create administrator account. Please try again.");
+    } finally {
+      setCreatingAdmin(false);
+    }
+  };
+
+  const handleDeleteAdmin = async (adminItem) => {
+    if (adminItem.is_master) {
+      alert("The Master Administrator account is protected and cannot be deleted.");
+      return;
+    }
+
+    const confirmMsg = `Are you sure you want to remove administrator "${adminItem.full_name || adminItem.email}"?\n\nThis will remove their account and assigned student roster.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      await api.delete(`/admin/admins/${adminItem.id}`);
+      await fetchAdminsList();
+    } catch (err) {
+      console.error("Failed to delete admin", err);
+      alert(err.response?.data?.detail || "Failed to delete administrator account.");
     }
   };
 
@@ -2080,12 +2143,24 @@ const AdminDashboard = () => {
 
               <div className="flex items-center space-x-3">
                 <button
+                  onClick={() => {
+                    setCreateAdminError('');
+                    setCreateAdminSuccess('');
+                    setNewAdminForm({ full_name: '', email: '', password: '' });
+                    setCreateAdminModalOpen(true);
+                  }}
+                  className="flex items-center space-x-2 bg-white text-black hover:bg-zinc-100 dark:bg-white dark:text-black dark:hover:bg-zinc-200 px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition shadow-md cursor-pointer"
+                >
+                  <UserPlus size={15} />
+                  <span>+ Add Administrator</span>
+                </button>
+                <button
                   onClick={fetchAdminsList}
                   disabled={loadingAdmins}
                   className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50"
                 >
                   <RefreshCw size={14} className={loadingAdmins ? "animate-spin" : ""} />
-                  <span>Refresh Admin List</span>
+                  <span>Refresh</span>
                 </button>
               </div>
             </div>
@@ -2162,7 +2237,8 @@ const AdminDashboard = () => {
                       <th className="p-4">Conducted Sessions</th>
                       <th className="p-4">Authorized Students</th>
                       <th className="p-4">Total Attendances</th>
-                      <th className="p-4 pr-6">Registered (IST)</th>
+                      <th className="p-4">Registered (IST)</th>
+                      <th className="p-4 pr-6 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 text-sm">
@@ -2172,7 +2248,7 @@ const AdminDashboard = () => {
                       a.email.toLowerCase().includes(adminSearchQuery.toLowerCase())
                     ).length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-12 text-center text-zinc-400 dark:text-zinc-600 font-mono text-xs">
+                        <td colSpan={8} className="p-12 text-center text-zinc-400 dark:text-zinc-600 font-mono text-xs">
                           {adminSearchQuery ? "No administrators matching your search query." : "No administrator accounts found."}
                         </td>
                       </tr>
@@ -2238,8 +2314,23 @@ const AdminDashboard = () => {
                             <td className="p-4 font-mono text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                               {adminItem.total_attendance_marked} Records
                             </td>
-                            <td className="p-4 pr-6 text-xs text-zinc-500 dark:text-zinc-400 font-mono">
+                            <td className="p-4 text-xs text-zinc-500 dark:text-zinc-400 font-mono">
                               {adminItem.created_at || '—'}
+                            </td>
+                            <td className="p-4 pr-6 text-right">
+                              {adminItem.is_master ? (
+                                <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-md border border-zinc-200 dark:border-zinc-700">
+                                  Protected
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleDeleteAdmin(adminItem)}
+                                  className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition border border-transparent hover:border-rose-200 dark:hover:border-rose-900/60 cursor-pointer"
+                                  title={`Remove Administrator ${adminItem.full_name || adminItem.email}`}
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              )}
                             </td>
                           </tr>
                         ))
@@ -2367,6 +2458,127 @@ const AdminDashboard = () => {
                     <>
                       <Check size={14} className="stroke-[3]" />
                       <span>Record as Present</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create Administrator Dialog Modal (Master Admin Only) */}
+      {createAdminModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 relative">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2.5 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded-xl border border-purple-200 dark:border-purple-800">
+                  <UserPlus size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm uppercase tracking-wider text-zinc-900 dark:text-zinc-100">
+                    Register New Administrator
+                  </h3>
+                  <p className="text-xs text-zinc-500">Provision instructor / faculty admin account</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setCreateAdminModalOpen(false)}
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <XCircle size={18} />
+              </button>
+            </div>
+
+            {createAdminError && (
+              <div className="bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/80 p-3 rounded-xl flex items-center space-x-2 text-xs text-rose-700 dark:text-rose-300">
+                <AlertCircle size={15} className="shrink-0 text-rose-500" />
+                <span>{createAdminError}</span>
+              </div>
+            )}
+
+            {createAdminSuccess && (
+              <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80 p-3 rounded-xl flex items-center space-x-2 text-xs text-emerald-700 dark:text-emerald-300">
+                <CheckCircle size={15} className="shrink-0 text-emerald-500" />
+                <span>{createAdminSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateAdmin} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-mono uppercase tracking-wider text-zinc-500 mb-1.5 font-bold">
+                  Administrator Full Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Prof. Alan Turing"
+                  value={newAdminForm.full_name}
+                  onChange={(e) => setNewAdminForm({ ...newAdminForm, full_name: e.target.value })}
+                  className="w-full px-4 py-2.5 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-black dark:focus:border-white transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-mono uppercase tracking-wider text-zinc-500 mb-1.5 font-bold">
+                  Administrator Institutional Email *
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. instructor@francisxavier.ac.in"
+                  value={newAdminForm.email}
+                  onChange={(e) => setNewAdminForm({ ...newAdminForm, email: e.target.value })}
+                  className="w-full px-4 py-2.5 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-black dark:focus:border-white transition font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-mono uppercase tracking-wider text-zinc-500 mb-1.5 font-bold">
+                  Initial Password (Min. 6 chars) *
+                </label>
+                <div className="relative">
+                  <input
+                    type={showAdminPassword ? "text" : "password"}
+                    required
+                    placeholder="Enter password..."
+                    value={newAdminForm.password}
+                    onChange={(e) => setNewAdminForm({ ...newAdminForm, password: e.target.value })}
+                    className="w-full pl-4 pr-10 py-2.5 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-black dark:focus:border-white transition font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminPassword(!showAdminPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-black dark:hover:text-white transition"
+                  >
+                    {showAdminPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setCreateAdminModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-mono font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingAdmin}
+                  className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-[0.99] text-white text-xs font-mono font-bold shadow-md transition disabled:opacity-50 cursor-pointer"
+                >
+                  {creatingAdmin ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" />
+                      <span>Creating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus size={13} />
+                      <span>Create Account</span>
                     </>
                   )}
                 </button>
