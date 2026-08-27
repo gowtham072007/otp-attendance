@@ -260,8 +260,11 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
     return {
         "session": {
             "id": target_session.id,
+            "admin_id": target_session.admin_id,
             "status": target_session.status,
             "created_at": to_ist(target_session.created_at).isoformat() if target_session.created_at else None,
+            "date": format_ist_date(target_session.created_at),
+            "time": format_ist_time(target_session.created_at),
             "formatted_date": format_ist_date(target_session.created_at),
             "formatted_time": format_ist_time(target_session.created_at)
         },
@@ -430,29 +433,94 @@ def get_attendance(session_id: Optional[int] = None, db: Session = Depends(get_d
 def export_attendance(session_id: Optional[int] = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     effective_admin_id = None if is_master_admin(admin) else admin.id
     data = compute_session_attendance(db, session_id, admin_id=effective_admin_id)
-    records = data["records"]
-    session_info = data["session"]
+    
+    present_list = data.get("present_list", [])
+    absent_list = data.get("absent_list", [])
+    summary = data.get("summary", {"total": 0, "present": 0, "absent": 0, "rate": "0%"})
+    session_info = data.get("session")
+    geofence = data.get("geofence", {})
+    
+    session_title = f"Session #{session_info['id']}" if session_info else "General Attendance"
+    session_status = session_info['status'] if session_info else "CLOSED"
+    session_date = session_info['date'] if session_info else datetime.now(IST).strftime('%d-%m-%Y')
+    session_time = session_info['time'] if session_info else datetime.now(IST).strftime('%I:%M:%S %p')
     session_num = f"Session_{session_info['id']:02d}" if session_info else "Attendance"
+    
+    # Creator info
+    creator_info = "Administrator"
+    if session_info and session_info.get("admin_id"):
+        creator_user = db.query(User).filter(User.id == session_info["admin_id"]).first()
+        if creator_user:
+            creator_info = f"{creator_user.full_name} ({creator_user.email})"
     
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Student Name", "Email", "Date (IST)", "Time (IST)", "Session", "Attendance Status"])
     
-    for r in records:
-        writer.writerow([
-            r["name"],
-            r["email"],
-            r["date"],
-            r["time"],
-            r["session"],
-            r["status"]
-        ])
+    # 1. Header Metadata Section
+    writer.writerow(["================================================================================"])
+    writer.writerow(["ATTENDANCE REPORT - FRANCIS XAVIER ENGINEERING COLLEGE"])
+    writer.writerow(["================================================================================"])
+    writer.writerow(["Session", f"{session_title} ({session_status})"])
+    writer.writerow(["Conducted On (IST)", f"{session_date} at {session_time}"])
+    writer.writerow(["Conducted By", creator_info])
+    writer.writerow(["Venue Perimeter", geofence.get("venue_name", "Francis Xavier Engineering College")])
+    writer.writerow(["Export Generated On (IST)", datetime.now(IST).strftime('%d-%m-%Y, %I:%M:%S %p')])
+    writer.writerow([])
+    
+    # 2. Executive Attendance Summary
+    writer.writerow(["--------------------------------------------------------------------------------"])
+    writer.writerow(["EXECUTIVE ATTENDANCE SUMMARY"])
+    writer.writerow(["--------------------------------------------------------------------------------"])
+    writer.writerow(["Total Whitelisted Students", summary.get("total", len(present_list) + len(absent_list))])
+    writer.writerow(["Total Present", summary.get("present", len(present_list))])
+    writer.writerow(["Total Absent", summary.get("absent", len(absent_list))])
+    writer.writerow(["Attendance Percentage", summary.get("rate", "0%")])
+    writer.writerow([])
+    
+    # 3. Present Students Section
+    writer.writerow(["================================================================================"])
+    writer.writerow([f"SECTION 1: PRESENT STUDENTS LIST ({len(present_list)} Students)"])
+    writer.writerow(["================================================================================"])
+    writer.writerow(["S.No", "Student Name", "Email", "Date (IST)", "Check-in Time (IST)", "Attendance Status"])
+    
+    if present_list:
+        for idx, p in enumerate(present_list, 1):
+            writer.writerow([
+                idx,
+                p.get("name", "Student"),
+                p.get("email", ""),
+                p.get("date", session_date),
+                p.get("time", "—"),
+                "Present"
+            ])
+    else:
+        writer.writerow(["—", "No students marked present for this session", "", "", "", "—"])
+    writer.writerow([])
+    
+    # 4. Absent Students Section
+    writer.writerow(["================================================================================"])
+    writer.writerow([f"SECTION 2: ABSENT STUDENTS LIST ({len(absent_list)} Students)"])
+    writer.writerow(["================================================================================"])
+    writer.writerow(["S.No", "Student Name", "Email", "Date (IST)", "Attendance Status"])
+    
+    if absent_list:
+        for idx, a in enumerate(absent_list, 1):
+            writer.writerow([
+                idx,
+                a.get("name", "Student"),
+                a.get("email", ""),
+                a.get("date", session_date),
+                "Absent"
+            ])
+    else:
+        writer.writerow(["—", "No absent students (100% Attendance Achieved)", "", "", "—"])
     
     output.seek(0)
     current_ist = datetime.now(IST).strftime('%d-%m-%Y_%I-%M%p')
+    csv_content = "\ufeff" + output.getvalue()
     return StreamingResponse(
-        iter([output.getvalue()]), 
-        media_type="text/csv", 
+        iter([csv_content]), 
+        media_type="text/csv; charset=utf-8", 
         headers={"Content-Disposition": f"attachment; filename=attendance_{session_num}_{current_ist}.csv"}
     )
 
