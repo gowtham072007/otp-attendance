@@ -18,7 +18,10 @@ import {
   ShieldCheck, 
   ShieldAlert, 
   LocateFixed,
-  Smartphone
+  Smartphone,
+  Mail,
+  Zap,
+  Sparkles
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -60,6 +63,13 @@ const UserDashboard = () => {
       radius_meters: DEFAULT_GEOFENCE_RADIUS
     }
   });
+
+  // Auto-OTP States
+  const [autoOtpLoading, setAutoOtpLoading] = useState(false);
+  const [autoOtpSent, setAutoOtpSent] = useState(false);
+  const [autoOtpMessage, setAutoOtpMessage] = useState('');
+  const [autoOtpDetails, setAutoOtpDetails] = useState(null);
+  const otpRequestedSessionRef = useRef(null);
 
   // Geolocation States
   const [coords, setCoords] = useState(null);
@@ -207,12 +217,83 @@ const UserDashboard = () => {
     return () => clearInterval(timer);
   }, []);
 
+  const requestAutoOtp = useCallback(async (isManual = false) => {
+    if (!coords?.latitude || !coords?.longitude) {
+      if (isManual) {
+        setStatus({ type: 'error', message: 'Location not acquired yet. Please ensure GPS is enabled.' });
+      }
+      return;
+    }
+    if (!isActiveSession || isAlreadyMarked) return;
+    if (locState !== 'INSIDE') {
+      if (isManual) {
+        setStatus({ type: 'error', message: 'You must be inside the venue to request the OTP.' });
+      }
+      return;
+    }
+
+    setAutoOtpLoading(true);
+    if (isManual) {
+      setStatus({ type: '', message: '' });
+    }
+
+    try {
+      const res = await api.post('/attendance/auto-otp', {
+        latitude: coords.latitude,
+        longitude: coords.longitude
+      });
+
+      if (res.data?.otp_code) {
+        const codeDigits = res.data.otp_code.split('');
+        setOtp(codeDigits);
+        setAutoOtpSent(true);
+        setAutoOtpDetails({
+          otp_code: res.data.otp_code,
+          student_email: res.data.student_email,
+          expires_at: res.data.expires_at,
+          venue_name: res.data.venue_name,
+          distance_meters: res.data.distance_meters,
+          email_sent: res.data.email_sent
+        });
+        setAutoOtpMessage(res.data.message || 'OTP automatically dispatched to your email and device!');
+      }
+    } catch (err) {
+      console.error("Auto OTP dispatch error", err);
+      if (isManual) {
+        setStatus({ 
+          type: 'error', 
+          message: err.response?.data?.detail || 'Failed to dispatch OTP.' 
+        });
+      }
+    } finally {
+      setAutoOtpLoading(false);
+    }
+  }, [coords, isActiveSession, isAlreadyMarked, locState]);
+
   // Proactively check location when there is an active session and attendance isn't marked
   useEffect(() => {
     if (isActiveSession && !isAlreadyMarked) {
       checkLocation();
     }
   }, [isActiveSession, isAlreadyMarked, checkLocation]);
+
+  // Automatically request OTP as soon as student GPS location is verified INSIDE venue
+  useEffect(() => {
+    const activeSessionId = sessionStatus.active_session?.id;
+    if (!activeSessionId) {
+      otpRequestedSessionRef.current = null;
+      setAutoOtpSent(false);
+      setAutoOtpDetails(null);
+      return;
+    }
+
+    if (isActiveSession && !isAlreadyMarked && isInside && coords?.latitude && coords?.longitude) {
+      if (otpRequestedSessionRef.current !== activeSessionId && !autoOtpLoading && !autoOtpSent) {
+        otpRequestedSessionRef.current = activeSessionId;
+        requestAutoOtp(false);
+      }
+    }
+  }, [isActiveSession, isAlreadyMarked, isInside, coords, sessionStatus.active_session, autoOtpLoading, autoOtpSent, requestAutoOtp]);
 
   const handleChange = (index, e) => {
     if (!isInside) return;
@@ -369,8 +450,12 @@ const UserDashboard = () => {
                   )}
                 </div>
 
-                <h2 className="text-2xl font-black text-black dark:text-white tracking-tight mb-1">Enter Active OTP</h2>
-                <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-6">Enter the 6-digit dynamic passcode displayed on the screen.</p>
+                <h2 className="text-2xl font-black text-black dark:text-white tracking-tight mb-1">Attendance Verification</h2>
+                <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-6">
+                  {isInside 
+                    ? 'Your physical location is verified. The OTP is automatically sent and filled.' 
+                    : 'Move inside the attendance zone to automatically receive and unlock the OTP.'}
+                </p>
 
                 {/* Location Status Banners & Warnings */}
                 {!isInside && (
@@ -423,24 +508,95 @@ const UserDashboard = () => {
                   </div>
                 )}
 
-                {/* Location Success Pill */}
+                {/* Location Success & Auto-OTP Delivery Pill */}
                 {isInside && (
-                  <div className="mb-6 p-3.5 rounded-2xl border bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/60 text-emerald-900 dark:text-emerald-200 text-xs flex items-center justify-between">
-                    <div className="flex items-center space-x-2.5">
-                      <MapPin size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      <span className="font-medium">
-                        Location verified! You are inside the venue (~{distance !== null ? `${Math.round(distance)}m` : '0m'} from center).
-                      </span>
+                  <div className="space-y-3 mb-6">
+                    {/* Location Badge */}
+                    <div className="p-3 rounded-2xl border bg-zinc-50 dark:bg-zinc-950/60 border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs flex items-center justify-between">
+                      <div className="flex items-center space-x-2.5">
+                        <MapPin size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span className="font-medium">
+                          Venue: <strong className="text-black dark:text-white">{venueName}</strong> (~{distance !== null ? `${Math.round(distance)}m` : '0m'} from center)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => checkLocation(true)}
+                        disabled={refreshingLoc}
+                        title="Re-verify GPS"
+                        className="p-1 text-zinc-500 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
+                      >
+                        <RefreshCw size={13} className={refreshingLoc ? 'animate-spin' : ''} />
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => checkLocation(true)}
-                      disabled={refreshingLoc}
-                      title="Re-verify GPS"
-                      className="p-1 text-emerald-700 dark:text-emerald-300 hover:text-emerald-900 dark:hover:text-white transition-colors cursor-pointer"
-                    >
-                      <RefreshCw size={13} className={refreshingLoc ? 'animate-spin' : ''} />
-                    </button>
+
+                    {/* Auto-OTP Loading Banner */}
+                    {autoOtpLoading && (
+                      <div className="p-4 rounded-2xl border bg-sky-50 dark:bg-sky-950/50 border-sky-200 dark:border-sky-800 text-sky-900 dark:text-sky-200 flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <Zap size={18} className="animate-pulse text-sky-600 dark:text-sky-400" />
+                          <div>
+                            <p className="font-bold text-xs">Inside Venue Verified! Automatically generating & dispatching OTP...</p>
+                            <p className="text-[11px] text-sky-700/80 dark:text-sky-300/80">Delivering code to your screen and sending email to {user.email}</p>
+                          </div>
+                        </div>
+                        <RefreshCw size={15} className="animate-spin text-sky-600 dark:text-sky-400 shrink-0" />
+                      </div>
+                    )}
+
+                    {/* Auto-OTP Dispatched Success Card */}
+                    {autoOtpSent && (
+                      <div className="p-4 rounded-2xl border-2 bg-emerald-50/90 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700 text-emerald-950 dark:text-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                        <div className="flex items-start space-x-3">
+                          <div className="p-2 bg-emerald-200/80 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 rounded-xl shrink-0 mt-0.5">
+                            <Sparkles size={16} />
+                          </div>
+                          <div>
+                            <div className="flex items-center space-x-2">
+                              <p className="font-black text-xs uppercase tracking-wider text-emerald-900 dark:text-emerald-200">
+                                ⚡ OTP Automatically Sent!
+                              </p>
+                              <span className="bg-emerald-200 dark:bg-emerald-800 text-emerald-900 dark:text-emerald-100 text-[10px] font-mono px-2 py-0.2 rounded-full font-bold">
+                                Pre-filled
+                              </span>
+                            </div>
+                            <p className="text-xs text-emerald-800/90 dark:text-emerald-300/90 mt-0.5 font-sans">
+                              Dispatched to <strong className="font-mono">{user.email}</strong> and loaded into the boxes below.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => requestAutoOtp(true)}
+                          disabled={autoOtpLoading}
+                          className="self-start sm:self-auto inline-flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-bold text-[11px] rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50 shrink-0"
+                        >
+                          <RefreshCw size={11} className={autoOtpLoading ? 'animate-spin' : ''} />
+                          <span>Resend OTP</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Fallback button if OTP wasn't auto-requested */}
+                    {!autoOtpSent && !autoOtpLoading && (
+                      <div className="p-3.5 rounded-2xl border bg-zinc-100 dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <Mail size={15} className="text-zinc-500" />
+                          <span className="text-xs text-zinc-600 dark:text-zinc-400 font-medium">
+                            Ready to receive dynamic passcode for Session #{sessionStatus.active_session.id}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => requestAutoOtp(true)}
+                          className="inline-flex items-center space-x-1 px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black font-mono font-bold text-[11px] rounded-xl transition cursor-pointer"
+                        >
+                          <Zap size={12} />
+                          <span>Send OTP</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -460,7 +616,9 @@ const UserDashboard = () => {
                         placeholder={!isInside ? '•' : ''}
                         className={`w-12 h-14 sm:w-14 sm:h-18 text-center text-2xl sm:text-3xl font-black font-mono rounded-2xl border-2 transition-all outline-none ${
                           isInside
-                            ? 'border-zinc-200 dark:border-zinc-700 bg-zinc-50/70 dark:bg-zinc-950/60 text-zinc-900 dark:text-white focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800'
+                            ? autoOtpSent
+                              ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50/40 dark:bg-emerald-950/30 text-emerald-950 dark:text-emerald-100 focus:bg-white dark:focus:bg-zinc-900 focus:border-emerald-600 dark:focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 dark:focus:ring-emerald-950/50'
+                              : 'border-zinc-200 dark:border-zinc-700 bg-zinc-50/70 dark:bg-zinc-950/60 text-zinc-900 dark:text-white focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800'
                             : 'border-zinc-200 dark:border-zinc-800 bg-zinc-100/60 dark:bg-zinc-950/30 text-zinc-400 dark:text-zinc-600 cursor-not-allowed'
                         }`}
                       />
@@ -480,12 +638,18 @@ const UserDashboard = () => {
                 <button
                   onClick={submitAttendance}
                   disabled={!isInside || submitting || otp.join('').length !== 6}
-                  className="w-full py-4 rounded-2xl font-bold text-sm tracking-wider uppercase font-mono shadow-md transition-all active:scale-[0.99] bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white disabled:bg-zinc-200 dark:disabled:bg-zinc-800 disabled:text-zinc-400 dark:disabled:text-zinc-600 disabled:cursor-not-allowed cursor-pointer"
+                  className={`w-full py-4 rounded-2xl font-bold text-sm tracking-wider uppercase font-mono shadow-md transition-all active:scale-[0.99] cursor-pointer disabled:cursor-not-allowed ${
+                    isInside && otp.join('').length === 6
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 shadow-lg ring-2 ring-emerald-500/50'
+                      : 'bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white disabled:bg-zinc-200 dark:disabled:bg-zinc-800 disabled:text-zinc-400 dark:disabled:text-zinc-600'
+                  }`}
                 >
                   {submitting 
-                    ? 'Verifying OTP...' 
+                    ? 'Verifying OTP & Submitting...' 
                     : !isInside 
                     ? 'Locked (Outside Venue)' 
+                    : autoOtpSent 
+                    ? '✓ Submit Verified Attendance' 
                     : 'Submit Attendance'}
                 </button>
               </div>

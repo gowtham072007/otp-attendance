@@ -9,19 +9,34 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import os
-from ..database import get_db
-from ..models import User, AttendanceSession, OTP, AttendanceRecord, AllowedEmail, UserDevice, GeofenceConfig
-from ..schemas import (
-    OTPSessionResponse, 
-    OTPResponse, 
-    AllowedEmailCreate, 
-    AllowedEmailBulkCreate, 
-    AllowedEmailResponse,
-    GeofenceConfigResponse,
-    GeofenceConfigUpdate,
-    ManualAttendanceRequest
-)
-from ..auth.utils import get_current_admin
+try:
+    from ..database import get_db
+    from ..models import User, AttendanceSession, OTP, AttendanceRecord, AllowedEmail, UserDevice, GeofenceConfig
+    from ..schemas import (
+        OTPSessionResponse, 
+        OTPResponse, 
+        AllowedEmailCreate, 
+        AllowedEmailBulkCreate, 
+        AllowedEmailResponse,
+        GeofenceConfigResponse,
+        GeofenceConfigUpdate,
+        ManualAttendanceRequest
+    )
+    from ..auth.utils import get_current_admin
+except (ImportError, ValueError):
+    from app.database import get_db
+    from app.models import User, AttendanceSession, OTP, AttendanceRecord, AllowedEmail, UserDevice, GeofenceConfig
+    from app.schemas import (
+        OTPSessionResponse, 
+        OTPResponse, 
+        AllowedEmailCreate, 
+        AllowedEmailBulkCreate, 
+        AllowedEmailResponse,
+        GeofenceConfigResponse,
+        GeofenceConfigUpdate,
+        ManualAttendanceRequest
+    )
+    from app.auth.utils import get_current_admin
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 

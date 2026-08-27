@@ -4,10 +4,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timezone, timedelta
-from ..database import get_db
-from ..models import User, AllowedEmail, UserDevice
-from ..schemas import DirectLoginRequest, Token, UserResponse
-from ..auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
+try:
+    from ..database import get_db
+    from ..models import User, AllowedEmail, UserDevice
+    from ..schemas import DirectLoginRequest, Token, UserResponse
+    from ..auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
+except (ImportError, ValueError):
+    from app.database import get_db
+    from app.models import User, AllowedEmail, UserDevice
+    from app.schemas import DirectLoginRequest, Token, UserResponse
+    from app.auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 INITIAL_ADMIN_EMAIL = os.getenv("INITIAL_ADMIN_EMAIL", "admin@example.com").strip().lower()

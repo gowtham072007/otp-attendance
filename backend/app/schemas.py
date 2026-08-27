@@ -112,4 +112,18 @@ class ManualAttendanceRequest(BaseModel):
     session_id: Optional[int] = None
     status: Optional[str] = "Present"
 
+class AutoOTPRequest(BaseModel):
+    latitude: float
+    longitude: float
+
+class AutoOTPResponse(BaseModel):
+    message: str
+    otp_code: str
+    session_id: int
+    expires_at: Optional[datetime] = None
+    email_sent: bool
+    student_email: str
+    distance_meters: float
+    venue_name: str
+
 

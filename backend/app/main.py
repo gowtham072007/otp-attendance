@@ -10,6 +10,39 @@ from .routes import auth, admin, attendance
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
+def migrate_db():
+    """Ensure newly added columns exist in existing database tables."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        # Check and add columns to attendance_records
+        for col_name, col_type in [
+            ("latitude", "FLOAT"),
+            ("longitude", "FLOAT"),
+            ("distance_meters", "FLOAT")
+        ]:
+            try:
+                conn.execute(text(f"ALTER TABLE attendance_records ADD COLUMN {col_name} {col_type}"))
+                conn.commit()
+            except Exception:
+                pass # Column already exists
+        
+        # Check and add columns to user_devices
+        for col_name, col_type in [
+            ("device_name", "VARCHAR"),
+            ("user_agent", "TEXT"),
+            ("ip_address", "VARCHAR"),
+            ("is_linked", "BOOLEAN DEFAULT 1"),
+            ("first_linked_at", "DATETIME"),
+            ("last_login_at", "DATETIME")
+        ]:
+            try:
+                conn.execute(text(f"ALTER TABLE user_devices ADD COLUMN {col_name} {col_type}"))
+                conn.commit()
+            except Exception:
+                pass
+
+migrate_db()
+
 def seed_initial_admin():
     initial_admin = os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower()
     if initial_admin and "@" in initial_admin:

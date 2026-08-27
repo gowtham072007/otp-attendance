@@ -1,14 +1,24 @@
 import os
 import math
+import random
+import string
 from typing import Optional
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from ..database import get_db
-from ..models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig
-from ..schemas import AttendanceSubmission
-from ..auth.utils import get_current_user
+try:
+    from ..database import get_db
+    from ..models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig
+    from ..schemas import AttendanceSubmission, AutoOTPRequest, AutoOTPResponse
+    from ..auth.utils import get_current_user
+    from ..utils.email_service import send_otp_email
+except (ImportError, ValueError):
+    from app.database import get_db
+    from app.models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig
+    from app.schemas import AttendanceSubmission, AutoOTPRequest, AutoOTPResponse
+    from app.auth.utils import get_current_user
+    from app.utils.email_service import send_otp_email
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 
@@ -107,6 +117,114 @@ def get_session_status(db: Session = Depends(get_db), current_user: User = Depen
             "longitude": geofence.longitude,
             "radius_meters": geofence.radius_meters
         }
+    }
+
+
+@router.post("/auto-otp", response_model=AutoOTPResponse)
+def auto_dispatch_otp(
+    payload: AutoOTPRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Automatically verifies student GPS location against the geofence and dispatches
+    the active attendance OTP to the student's device and registered email.
+    """
+    # 1. Device lock check (for students)
+    if current_user.role == "USER" and current_user.device:
+        client_device_id = request.headers.get("X-Device-Id")
+        if client_device_id and current_user.device.device_id != client_device_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Device Mismatch: OTP can only be requested from your registered device."
+            )
+
+    # 2. Check active session
+    active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
+    if not active_session:
+        raise HTTPException(
+            status_code=400,
+            detail="No active attendance session currently running."
+        )
+
+    # 3. Check if user already marked attendance
+    existing_record = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == active_session.id,
+        AttendanceRecord.user_id == current_user.id
+    ).first()
+    if existing_record:
+        raise HTTPException(
+            status_code=400,
+            detail="You have already marked attendance for this session."
+        )
+
+    # 4. Geofence location verification
+    if payload.latitude is None or payload.longitude is None:
+        raise HTTPException(
+            status_code=400,
+            detail="GPS coordinates required to verify you are inside the attendance venue."
+        )
+
+    geofence = get_active_geofence(db)
+    distance = calculate_distance_meters(
+        payload.latitude, payload.longitude,
+        geofence.latitude, geofence.longitude
+    )
+
+    if distance > geofence.radius_meters:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Location verification failed: You are outside the attendance zone (~{int(distance)}m away from {geofence.venue_name}). You must be within {int(geofence.radius_meters)}m to receive the OTP."
+        )
+
+    # 5. Get active unexpired OTP or generate one for this active session
+    now_utc = datetime.now(timezone.utc)
+    active_otp = db.query(OTP).filter(
+        OTP.session_id == active_session.id,
+        OTP.status == "ACTIVE",
+        OTP.expires_at > now_utc
+    ).order_by(OTP.created_at.desc()).first()
+
+    if not active_otp:
+        # Invalidate old OTPs
+        old_otps = db.query(OTP).filter(OTP.session_id == active_session.id, OTP.status == "ACTIVE").all()
+        for old in old_otps:
+            old.status = "INVALIDATED"
+        
+        # Generate fresh OTP valid for 60 seconds
+        otp_code = ''.join(random.choices(string.digits, k=6))
+        expires_at = now_utc + timedelta(seconds=60)
+        active_otp = OTP(
+            session_id=active_session.id,
+            otp_code=otp_code,
+            expires_at=expires_at,
+            status="ACTIVE"
+        )
+        db.add(active_otp)
+        db.commit()
+        db.refresh(active_otp)
+
+    # 6. Send Email in background task
+    background_tasks.add_task(
+        send_otp_email,
+        to_email=current_user.email,
+        student_name=current_user.full_name or "Student",
+        otp_code=active_otp.otp_code,
+        session_id=active_session.id,
+        venue_name=geofence.venue_name
+    )
+
+    return {
+        "message": f"Location verified! OTP sent to {current_user.email} and delivered to your device.",
+        "otp_code": active_otp.otp_code,
+        "session_id": active_session.id,
+        "expires_at": active_otp.expires_at,
+        "email_sent": True,
+        "student_email": current_user.email,
+        "distance_meters": round(distance, 1),
+        "venue_name": geofence.venue_name
     }
 
 
