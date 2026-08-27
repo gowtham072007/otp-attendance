@@ -527,7 +527,9 @@ def manual_mark_attendance(payload: ManualAttendanceRequest, db: Session = Depen
 
 @router.get("/allowed-emails", response_model=List[AllowedEmailResponse])
 def get_allowed_emails(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    return db.query(AllowedEmail).order_by(AllowedEmail.created_at.desc()).all()
+    admin_emails = {a.email.lower().strip() for a in db.query(User).filter(User.role == "ADMIN").all() if a.email}
+    all_allowed = db.query(AllowedEmail).order_by(AllowedEmail.created_at.desc()).all()
+    return [a for a in all_allowed if a.email.lower().strip() not in admin_emails]
 
 @router.post("/allowed-emails", response_model=AllowedEmailResponse)
 def add_allowed_email(payload: AllowedEmailCreate, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
@@ -538,6 +540,14 @@ def add_allowed_email(payload: AllowedEmailCreate, db: Session = Depends(get_db)
     if "@" not in email_clean or "." not in email_clean:
         raise HTTPException(status_code=400, detail="Invalid email address format")
     
+    # Check if this email belongs to an Administrator account
+    admin_user = db.query(User).filter(func.lower(User.email) == email_clean, User.role == "ADMIN").first()
+    if admin_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot add an Administrator account to the Student Whitelist. Whitelist and Attendance records are strictly for students only."
+        )
+
     # Check if already exists
     existing = db.query(AllowedEmail).filter(AllowedEmail.email == email_clean).first()
     if existing:
@@ -558,6 +568,8 @@ def add_bulk_allowed_emails(payload: AllowedEmailBulkCreate, db: Session = Depen
     skipped_count = 0
     errors = []
     
+    admin_emails = {a.email.lower().strip() for a in db.query(User).filter(User.role == "ADMIN").all() if a.email}
+
     for raw_email in payload.emails:
         clean = raw_email.strip().lower()
         if not clean:
@@ -567,6 +579,11 @@ def add_bulk_allowed_emails(payload: AllowedEmailBulkCreate, db: Session = Depen
             errors.append(f"Invalid email: {raw_email}")
             continue
         
+        if clean in admin_emails:
+            skipped_count += 1
+            errors.append(f"Skipped admin account email: {raw_email}")
+            continue
+
         existing = db.query(AllowedEmail).filter(AllowedEmail.email == clean).first()
         if existing:
             skipped_count += 1
@@ -578,7 +595,7 @@ def add_bulk_allowed_emails(payload: AllowedEmailBulkCreate, db: Session = Depen
         
     db.commit()
     return {
-        "message": f"Successfully added {added_count} emails. {skipped_count} skipped.",
+        "message": f"Successfully added {added_count} student emails. {skipped_count} skipped.",
         "added_count": added_count,
         "skipped_count": skipped_count,
         "errors": errors

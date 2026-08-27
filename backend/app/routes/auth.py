@@ -43,16 +43,6 @@ def direct_login(request: DirectLoginRequest, db: Session = Depends(get_db)):
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access Denied: Your email ID is not authorized. Please contact the Admin to register your email."
                 )
-        else:
-            # Admin login: permanently ensure admin email is in the Authorized Login Whitelist
-            allowed = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == email).first()
-            if not allowed:
-                admin_allowed = AllowedEmail(
-                    email=email,
-                    name=full_name or "Administrator"
-                )
-                db.add(admin_allowed)
-                db.commit()
 
         if not user:
             # Create user
@@ -177,10 +167,6 @@ def admin_login(request: AdminLoginRequest, db: Session = Depends(get_db)):
             hashed_password=hash_password(password)
         )
         db.add(user)
-        # Ensure in allowed emails
-        allowed = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == email).first()
-        if not allowed:
-            db.add(AllowedEmail(email=email, name="Master Administrator"))
         db.commit()
         db.refresh(user)
 
@@ -206,12 +192,6 @@ def admin_login(request: AdminLoginRequest, db: Session = Depends(get_db)):
     else:
         # Legacy admin account without password set -> set password on first login
         user.hashed_password = hash_password(password)
-        db.commit()
-
-    # Ensure admin is in allowed_emails
-    allowed = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == email).first()
-    if not allowed:
-        db.add(AllowedEmail(email=email, name=user.full_name or "Administrator"))
         db.commit()
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -277,12 +257,6 @@ def admin_register(request: AdminRegisterRequest, db: Session = Depends(get_db))
         db.add(user)
         db.commit()
         db.refresh(user)
-
-    # Add to allowed emails whitelist
-    allowed = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == email).first()
-    if not allowed:
-        db.add(AllowedEmail(email=email, name=full_name))
-        db.commit()
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(

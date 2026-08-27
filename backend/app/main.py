@@ -54,6 +54,10 @@ def migrate_db():
         # Purge any legacy attendance records belonging to Admin accounts
         try:
             conn.execute(text("DELETE FROM attendance_records WHERE user_id IN (SELECT id FROM users WHERE role = 'ADMIN')"))
+            conn.execute(text("DELETE FROM allowed_emails WHERE lower(email) IN (SELECT lower(email) FROM users WHERE role = 'ADMIN')"))
+            initial_admin = os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower()
+            if initial_admin:
+                conn.execute(text(f"DELETE FROM allowed_emails WHERE lower(email) = '{initial_admin}'"))
             conn.commit()
         except Exception:
             pass
@@ -61,14 +65,21 @@ def migrate_db():
 migrate_db()
 
 def seed_initial_admin():
+    """Ensure master administrator user account exists."""
     initial_admin = os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower()
     if initial_admin and "@" in initial_admin:
         db = SessionLocal()
         try:
-            exists = db.query(AllowedEmail).filter(AllowedEmail.email == initial_admin).first()
+            exists = db.query(User).filter(User.email == initial_admin).first()
             if not exists:
-                admin_entry = AllowedEmail(email=initial_admin, name="Administrator")
-                db.add(admin_entry)
+                import uuid
+                admin_user = User(
+                    email=initial_admin,
+                    full_name="Master Administrator",
+                    role="ADMIN",
+                    google_id=str(uuid.uuid4())
+                )
+                db.add(admin_user)
                 db.commit()
         except Exception as e:
             print("Error seeding initial admin:", e)
