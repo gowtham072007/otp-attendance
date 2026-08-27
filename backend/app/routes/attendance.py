@@ -5,22 +5,24 @@ import string
 from typing import Optional
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 try:
     from ..database import get_db
-    from ..models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig
+    from ..models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, AllowedEmail
     from ..schemas import AttendanceSubmission, AutoOTPRequest, AutoOTPResponse
     from ..auth.utils import get_current_user
     from ..utils.email_service import send_otp_email
 except (ImportError, ValueError):
     from app.database import get_db
-    from app.models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig
+    from app.models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, AllowedEmail
     from app.schemas import AttendanceSubmission, AutoOTPRequest, AutoOTPResponse
     from app.auth.utils import get_current_user
     from app.utils.email_service import send_otp_email
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
+INITIAL_ADMIN_EMAIL = os.getenv("INITIAL_ADMIN_EMAIL", "admin@francisxavier.ac.in").strip().lower()
 
 def calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate the great-circle distance between two points on the Earth using Haversine formula."""
@@ -66,21 +68,86 @@ def get_active_geofence(db: Session) -> GeofenceConfig:
         db.refresh(config)
     return config
 
-def get_today_session(db: Session) -> Optional[AttendanceSession]:
+def get_active_session_for_student(db: Session, student_user: User) -> Optional[AttendanceSession]:
+    """
+    Finds the active attendance session relevant for this specific student:
+    - If started by a Regular Admin: Only students authorized by that admin are eligible.
+    - If started by the Master Admin: ALL whitelisted students are eligible (Institute-wide session).
+    """
+    clean_email = (student_user.email or "").strip().lower()
+    allowed_entries = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == clean_email).all()
+    if not allowed_entries:
+        return None
+
+    authorized_admin_ids = {a.admin_id for a in allowed_entries if a.admin_id is not None}
+    has_unscoped_whitelist = any(a.admin_id is None for a in allowed_entries)
+
+    master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
+    master_admin_id = master_admin.id if master_admin else None
+
+    active_sessions = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").order_by(AttendanceSession.id.desc()).all()
+    if not active_sessions:
+        return None
+
+    # Priority 1: Check active session created by student's authorizing admin
+    for s in active_sessions:
+        if s.admin_id in authorized_admin_ids:
+            return s
+
+    # Priority 2: Check active session created by Master Admin (all-user institute session)
+    for s in active_sessions:
+        if master_admin_id and s.admin_id == master_admin_id:
+            return s
+
+    # Priority 3: Legacy unscoped entries
+    if has_unscoped_whitelist:
+        return active_sessions[0]
+
+    return None
+
+def get_today_session_for_student(db: Session, student_user: User) -> Optional[AttendanceSession]:
+    clean_email = (student_user.email or "").strip().lower()
+    allowed_entries = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == clean_email).all()
+    if not allowed_entries:
+        return None
+
+    authorized_admin_ids = {a.admin_id for a in allowed_entries if a.admin_id is not None}
+    has_unscoped_whitelist = any(a.admin_id is None for a in allowed_entries)
+
+    master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
+    master_admin_id = master_admin.id if master_admin else None
+
     now_ist = datetime.now(IST)
     start_of_day_ist = datetime(now_ist.year, now_ist.month, now_ist.day, 0, 0, 0, tzinfo=IST)
     end_of_day_ist = datetime(now_ist.year, now_ist.month, now_ist.day, 23, 59, 59, tzinfo=IST)
     start_utc = start_of_day_ist.astimezone(timezone.utc).replace(tzinfo=None)
     end_utc = end_of_day_ist.astimezone(timezone.utc).replace(tzinfo=None)
-    return db.query(AttendanceSession).filter(
+
+    today_sessions = db.query(AttendanceSession).filter(
         AttendanceSession.created_at >= start_utc,
         AttendanceSession.created_at <= end_utc
-    ).order_by(AttendanceSession.created_at.desc()).first()
+    ).order_by(AttendanceSession.created_at.desc()).all()
+
+    if not today_sessions:
+        return None
+
+    for s in today_sessions:
+        if s.admin_id in authorized_admin_ids:
+            return s
+
+    for s in today_sessions:
+        if master_admin_id and s.admin_id == master_admin_id:
+            return s
+
+    if has_unscoped_whitelist:
+        return today_sessions[0]
+
+    return None
 
 @router.get("/session/status")
 def get_session_status(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
-    today_session = get_today_session(db)
+    active_session = get_active_session_for_student(db, current_user)
+    today_session = get_today_session_for_student(db, current_user)
     geofence = get_active_geofence(db)
     
     # Check if student marked attendance for active or today's session
@@ -148,12 +215,12 @@ def auto_dispatch_otp(
                 detail="Device Mismatch: OTP can only be requested from your registered device."
             )
 
-    # 2. Check active session
-    active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
+    # 2. Check active session scoped for this student
+    active_session = get_active_session_for_student(db, current_user)
     if not active_session:
         raise HTTPException(
             status_code=400,
-            detail="No active attendance session currently running."
+            detail="No active attendance session currently running for your class. If an administrator is running a session, ensure you are enrolled by that administrator."
         )
 
     # 3. Check if user already marked attendance
@@ -253,10 +320,10 @@ def mark_attendance(submission: AttendanceSubmission, request: Request, db: Sess
                 detail="Device Mismatch: Attendance must be submitted from your registered device."
             )
 
-    # Find active session
-    active_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").first()
+    # Find active session scoped for this student
+    active_session = get_active_session_for_student(db, current_user)
     if not active_session:
-        raise HTTPException(status_code=400, detail="No active attendance session.")
+        raise HTTPException(status_code=400, detail="No active attendance session currently running for your class or administrator.")
 
     # Geofence location verification
     if submission.latitude is None or submission.longitude is None:
