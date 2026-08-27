@@ -7,12 +7,12 @@ from datetime import datetime, timezone, timedelta
 try:
     from ..database import get_db
     from ..models import User, AllowedEmail, UserDevice
-    from ..schemas import DirectLoginRequest, AdminLoginRequest, AdminRegisterRequest, Token, UserResponse
+    from ..schemas import DirectLoginRequest, AdminLoginRequest, AdminRegisterRequest, Token, UserResponse, AdminRegisterResponse
     from ..auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES, hash_password, verify_password
 except (ImportError, ValueError):
     from app.database import get_db
     from app.models import User, AllowedEmail, UserDevice
-    from app.schemas import DirectLoginRequest, AdminLoginRequest, AdminRegisterRequest, Token, UserResponse
+    from app.schemas import DirectLoginRequest, AdminLoginRequest, AdminRegisterRequest, Token, UserResponse, AdminRegisterResponse
     from app.auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -188,6 +188,14 @@ def admin_login(request: AdminLoginRequest, db: Session = Depends(get_db)):
             detail="Access Denied: This account does not have Administrator privileges."
         )
 
+    # Check if this admin account is approved by Master Admin
+    is_master = bool(user.email and user.email.lower().strip() == INITIAL_ADMIN_EMAIL)
+    if not is_master and hasattr(user, 'is_approved') and not user.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account Pending Approval: Your administrator account has been registered and is awaiting approval from the Master Administrator (admin@francisxavier.ac.in). You will be able to log in once approved."
+        )
+
     # Password check
     if user.hashed_password:
         if not verify_password(password, user.hashed_password):
@@ -211,7 +219,7 @@ def admin_login(request: AdminLoginRequest, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/admin/register", response_model=Token)
+@router.post("/admin/register", response_model=AdminRegisterResponse)
 def admin_register(request: AdminRegisterRequest, db: Session = Depends(get_db)):
     full_name = request.full_name.strip()
     email = request.email.strip().lower()
@@ -237,6 +245,10 @@ def admin_register(request: AdminRegisterRequest, db: Session = Depends(get_db))
             detail="Invalid Admin Secret Passkey. Please enter the valid administrator secret passkey."
         )
 
+    is_master = (email == INITIAL_ADMIN_EMAIL)
+    # Master admin is auto-approved; all other self-registered admins require Master Admin approval
+    is_approved = True if is_master else False
+
     # Check if user already exists
     existing_user = db.query(User).filter(func.lower(User.email) == email).first()
     if existing_user:
@@ -248,6 +260,7 @@ def admin_register(request: AdminRegisterRequest, db: Session = Depends(get_db))
         # Upgrade existing user or set password
         existing_user.full_name = full_name
         existing_user.role = "ADMIN"
+        existing_user.is_approved = is_approved
         existing_user.hashed_password = hash_password(password)
         db.commit()
         db.refresh(existing_user)
@@ -258,21 +271,33 @@ def admin_register(request: AdminRegisterRequest, db: Session = Depends(get_db))
             google_id=str(uuid.uuid4()),
             full_name=full_name,
             role="ADMIN",
+            is_approved=is_approved,
             hashed_password=hash_password(password)
         )
         db.add(user)
         db.commit()
         db.refresh(user)
 
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.email, "role": "ADMIN"}, expires_delta=access_token_expires
-    )
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": to_user_response(user)
-    }
+    if is_approved:
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.email, "role": "ADMIN"}, expires_delta=access_token_expires
+        )
+        return AdminRegisterResponse(
+            message="Administrator account created and signed in successfully!",
+            is_approved=True,
+            access_token=access_token,
+            token_type="bearer",
+            user=to_user_response(user)
+        )
+    else:
+        return AdminRegisterResponse(
+            message="Registration submitted successfully! Your administrator account is pending approval by the Master Administrator (admin@francisxavier.ac.in). You can sign in once approved.",
+            is_approved=False,
+            access_token=None,
+            token_type=None,
+            user=to_user_response(user)
+        )
 
 
 @router.get("/me", response_model=UserResponse)

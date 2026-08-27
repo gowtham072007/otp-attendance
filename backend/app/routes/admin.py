@@ -954,12 +954,14 @@ def get_all_admins(db: Session = Depends(get_db), admin: User = Depends(get_curr
         ).count()
         
         is_master = bool(a.email and a.email.strip().lower() == INITIAL_ADMIN_EMAIL)
+        is_appr = bool(getattr(a, 'is_approved', True))
         
         results.append(AdminAccountSummary(
             id=a.id,
             full_name=a.full_name or ("Master Administrator" if is_master else "Class Instructor"),
             email=a.email,
             is_master=is_master,
+            is_approved=is_appr,
             sessions_count=sess_count,
             active_session_id=active_sess.id if active_sess else None,
             whitelisted_students_count=whitelist_count,
@@ -967,8 +969,8 @@ def get_all_admins(db: Session = Depends(get_db), admin: User = Depends(get_curr
             created_at=format_ist_date(a.created_at) if hasattr(a, 'created_at') and a.created_at else None
         ))
         
-    # Sort Master Admin first, then other admins by id
-    results.sort(key=lambda x: (not x.is_master, x.id))
+    # Sort Master Admin first, then pending approvals, then other admins by id
+    results.sort(key=lambda x: (not x.is_master, x.is_approved, x.id))
     return results
 
 @router.post("/admins", response_model=AdminAccountSummary)
@@ -1008,6 +1010,7 @@ def create_admin_by_master(
             )
         existing_user.full_name = full_name
         existing_user.role = "ADMIN"
+        existing_user.is_approved = True
         existing_user.hashed_password = hash_password(password)
         db.commit()
         db.refresh(existing_user)
@@ -1018,6 +1021,7 @@ def create_admin_by_master(
             google_id=str(uuid.uuid4()),
             full_name=full_name,
             role="ADMIN",
+            is_approved=True,
             hashed_password=hash_password(password)
         )
         db.add(user)
@@ -1030,12 +1034,34 @@ def create_admin_by_master(
         full_name=user.full_name or "Administrator",
         email=user.email,
         is_master=is_master,
+        is_approved=True,
         sessions_count=0,
         active_session_id=None,
         whitelisted_students_count=0,
         total_attendance_marked=0,
         created_at=format_ist_date(user.created_at) if hasattr(user, 'created_at') and user.created_at else datetime.now(IST).strftime("%d-%m-%Y")
     )
+
+@router.post("/admins/{admin_id}/approve")
+def approve_admin_by_master(
+    admin_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    if not is_master_admin(admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Only the Master Administrator can approve administrator accounts."
+        )
+        
+    target_admin = db.query(User).filter(User.id == admin_id, User.role == "ADMIN").first()
+    if not target_admin:
+        raise HTTPException(status_code=404, detail="Administrator account not found.")
+        
+    target_admin.is_approved = True
+    db.commit()
+    db.refresh(target_admin)
+    return {"message": f"Administrator '{target_admin.email}' approved successfully!"}
 
 @router.delete("/admins/{admin_id}")
 def delete_admin_by_master(

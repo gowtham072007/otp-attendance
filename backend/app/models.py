@@ -12,6 +12,7 @@ class User(Base):
     full_name = Column(String)
     picture = Column(String, nullable=True)
     role = Column(String, default="USER") # ADMIN or USER
+    is_approved = Column(Boolean, default=True) # For ADMIN accounts, requires Master Admin approval if registered
     hashed_password = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 

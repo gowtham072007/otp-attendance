@@ -145,6 +145,7 @@ class AdminAccountSummary(BaseModel):
     full_name: Optional[str] = "Administrator"
     email: str
     is_master: bool = False
+    is_approved: bool = True
     sessions_count: int = 0
     active_session_id: Optional[int] = None
     whitelisted_students_count: int = 0
@@ -155,3 +156,10 @@ class CreateAdminByMasterRequest(BaseModel):
     full_name: str
     email: str
     password: str
+
+class AdminRegisterResponse(BaseModel):
+    message: str
+    is_approved: bool
+    access_token: Optional[str] = None
+    token_type: Optional[str] = None
+    user: Optional[UserResponse] = None

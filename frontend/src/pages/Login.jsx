@@ -116,15 +116,22 @@ const Login = () => {
 
     setLoading(true);
     setError(null);
+    setSuccessMsg(null);
     try {
-      await adminRegister(
+      const res = await adminRegister(
         adminForm.fullName.trim(),
         adminForm.email.trim(),
         adminForm.password,
         adminForm.secretKey.trim()
       );
+      if (res && !res.is_approved) {
+        setSuccessMsg("Registration Submitted! Your administrator account has been created and is awaiting approval from the Master Administrator (admin@francisxavier.ac.in). You will be able to sign in once approved.");
+        setAdminSubMode('LOGIN');
+        setAdminForm({ email: adminForm.email.trim(), password: '', fullName: '', secretKey: '' });
+      }
     } catch (err) {
       setError(err.response?.data?.detail || "Admin account creation failed. Please check the Admin Secret Key.");
+    } finally {
       setLoading(false);
     }
   };

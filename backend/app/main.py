@@ -48,7 +48,8 @@ def migrate_db():
 
         # Check and add columns to users
         for col_name, col_type in [
-            ("hashed_password", "VARCHAR")
+            ("hashed_password", "VARCHAR"),
+            ("is_approved", "BOOLEAN DEFAULT 1")
         ]:
             try:
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))

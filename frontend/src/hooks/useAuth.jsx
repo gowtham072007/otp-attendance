@@ -81,12 +81,16 @@ export const AuthProvider = ({ children }) => {
         password,
         admin_secret_key: adminSecretKey
       });
-      localStorage.setItem('token', response.data.access_token);
       
-      const userData = response.data.user;
-      setUser(userData);
-      navigate('/admin');
-      return userData;
+      if (response.data.is_approved && response.data.access_token) {
+        localStorage.setItem('token', response.data.access_token);
+        const userData = response.data.user;
+        setUser(userData);
+        navigate('/admin');
+        return response.data;
+      }
+      
+      return response.data;
     } catch (error) {
       console.error("Admin Registration failed", error);
       throw error;

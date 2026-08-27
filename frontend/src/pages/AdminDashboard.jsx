@@ -321,6 +321,16 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleApproveAdmin = async (adminItem) => {
+    try {
+      await api.post(`/admin/admins/${adminItem.id}/approve`);
+      await fetchAdminsList();
+    } catch (err) {
+      console.error("Failed to approve administrator", err);
+      alert(err.response?.data?.detail || "Failed to approve administrator account.");
+    }
+  };
+
   useEffect(() => {
     if (isMasterAdmin && activeTab === 'admins') {
       fetchAdminsList();
@@ -2166,7 +2176,7 @@ const AdminDashboard = () => {
             </div>
 
             {/* Quick Metrics Bar */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center space-x-4">
                 <div className="p-3 bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400 rounded-xl border border-purple-200 dark:border-purple-800">
                   <ShieldCheck size={24} />
@@ -2174,6 +2184,30 @@ const AdminDashboard = () => {
                 <div>
                   <p className="text-2xl font-black font-mono text-zinc-900 dark:text-zinc-100">{adminsList.length}</p>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">Registered Admins</p>
+                </div>
+              </div>
+
+              <div className={`p-5 rounded-2xl border shadow-xs flex items-center space-x-4 ${
+                adminsList.filter(a => !a.is_approved).length > 0
+                  ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800/80'
+                  : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'
+              }`}>
+                <div className={`p-3 rounded-xl border ${
+                  adminsList.filter(a => !a.is_approved).length > 0
+                    ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700'
+                }`}>
+                  <Clock size={24} />
+                </div>
+                <div>
+                  <p className={`text-2xl font-black font-mono ${
+                    adminsList.filter(a => !a.is_approved).length > 0
+                      ? 'text-amber-600 dark:text-amber-400 animate-pulse'
+                      : 'text-zinc-900 dark:text-zinc-100'
+                  }`}>
+                    {adminsList.filter(a => !a.is_approved).length}
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">Pending Approvals</p>
                 </div>
               </div>
 
@@ -2197,7 +2231,7 @@ const AdminDashboard = () => {
                   <p className="text-2xl font-black font-mono text-zinc-900 dark:text-zinc-100">
                     {adminsList.reduce((acc, curr) => acc + (curr.whitelisted_students_count || 0), 0)}
                   </p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">Total Whitelisted Students</p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">Whitelisted Students</p>
                 </div>
               </div>
             </div>
@@ -2210,7 +2244,7 @@ const AdminDashboard = () => {
                     Administrator Accounts & Assigned Rosters
                   </h3>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    Live overview of administrators, session activity, and authorized student counts
+                    Live overview of administrators, session activity, approval status, and student counts
                   </p>
                 </div>
 
@@ -2232,7 +2266,7 @@ const AdminDashboard = () => {
                   <thead>
                     <tr className="bg-zinc-100/90 dark:bg-zinc-950/90 border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-mono uppercase tracking-wider text-zinc-600 dark:text-zinc-400 font-bold">
                       <th className="p-4 pl-6">Administrator Profile</th>
-                      <th className="p-4">Role & Privilege</th>
+                      <th className="p-4">Role & Status</th>
                       <th className="p-4">Session Status</th>
                       <th className="p-4">Conducted Sessions</th>
                       <th className="p-4">Authorized Students</th>
@@ -2266,6 +2300,8 @@ const AdminDashboard = () => {
                                 <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs ${
                                   adminItem.is_master 
                                     ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800' 
+                                    : !adminItem.is_approved
+                                    ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
                                     : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700'
                                 }`}>
                                   {adminItem.full_name ? adminItem.full_name.charAt(0).toUpperCase() : 'A'}
@@ -2285,9 +2321,13 @@ const AdminDashboard = () => {
                                 <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 border border-purple-300 dark:border-purple-800">
                                   <span>👑 Master Admin</span>
                                 </span>
+                              ) : !adminItem.is_approved ? (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800 animate-pulse">
+                                  <span>⏳ Pending Approval</span>
+                                </span>
                               ) : (
-                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">
-                                  Class Instructor
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                  Active Instructor
                                 </span>
                               )}
                             </td>
@@ -2322,6 +2362,24 @@ const AdminDashboard = () => {
                                 <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-md border border-zinc-200 dark:border-zinc-700">
                                   Protected
                                 </span>
+                              ) : !adminItem.is_approved ? (
+                                <div className="flex items-center justify-end space-x-1.5">
+                                  <button
+                                    onClick={() => handleApproveAdmin(adminItem)}
+                                    className="inline-flex items-center space-x-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-lg text-xs font-mono font-bold transition shadow-xs cursor-pointer"
+                                    title={`Approve Administrator ${adminItem.full_name || adminItem.email}`}
+                                  >
+                                    <Check size={13} className="stroke-[3]" />
+                                    <span>Approve</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteAdmin(adminItem)}
+                                    className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition border border-transparent hover:border-rose-200 dark:hover:border-rose-900/60 cursor-pointer"
+                                    title={`Reject & Delete ${adminItem.full_name || adminItem.email}`}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
                               ) : (
                                 <button
                                   onClick={() => handleDeleteAdmin(adminItem)}
