@@ -100,23 +100,32 @@ def get_today_session(db: Session, admin_id: Optional[int] = None) -> Optional[A
 
 def compute_session_attendance(db: Session, session_id: Optional[int] = None, admin_id: Optional[int] = None):
     geofence = get_active_geofence(db)
+    
+    master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
+    master_admin_id = master_admin.id if master_admin else None
+    is_requester_master = bool(admin_id is None or (master_admin_id is not None and admin_id == master_admin_id))
+
     if session_id:
         query = db.query(AttendanceSession).filter(AttendanceSession.id == session_id)
-        if admin_id is not None:
-            query = query.filter(AttendanceSession.admin_id == admin_id)
+        if not is_requester_master:
+            query = query.filter((AttendanceSession.admin_id == admin_id) | (AttendanceSession.admin_id == master_admin_id))
         target_session = query.first()
     else:
-        # Check today's session first, or active session, or most recent session for this admin
+        # Check today's session first, or active session, or most recent session
         target_session = get_today_session(db, admin_id=admin_id)
+        if not target_session and not is_requester_master and master_admin_id:
+            target_session = get_today_session(db, admin_id=master_admin_id)
+
         if not target_session:
             query = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE")
-            if admin_id is not None:
-                query = query.filter(AttendanceSession.admin_id == admin_id)
-            target_session = query.first()
+            if not is_requester_master:
+                query = query.filter((AttendanceSession.admin_id == admin_id) | (AttendanceSession.admin_id == master_admin_id))
+            target_session = query.order_by(AttendanceSession.id.desc()).first()
+
         if not target_session:
             query = db.query(AttendanceSession)
-            if admin_id is not None:
-                query = query.filter(AttendanceSession.admin_id == admin_id)
+            if not is_requester_master:
+                query = query.filter((AttendanceSession.admin_id == admin_id) | (AttendanceSession.admin_id == master_admin_id))
             target_session = query.order_by(AttendanceSession.id.desc()).first()
             
     if not target_session:
@@ -146,18 +155,25 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
     ).all()
     present_user_ids = {r.user_id: r for r in attendance_records}
     
-    # Get all whitelisted student emails for this specific admin (excluding admin emails)
-    target_admin_id = target_session.admin_id if target_session else admin_id
-    if target_admin_id:
-        allowed_list = db.query(AllowedEmail).filter(AllowedEmail.admin_id == target_admin_id).all()
+    # Build student roster:
+    # If requester is Master Admin:
+    #   - If target_session is Master Admin session: all whitelisted students across the college
+    #   - If target_session is regular admin session: students of that regular admin
+    # If requester is Regular Admin:
+    #   - ALWAYS scope roster strictly to THAT regular admin's whitelisted students
+    if is_requester_master:
+        if master_admin_id and target_session.admin_id == master_admin_id:
+            allowed_list = db.query(AllowedEmail).all()
+        else:
+            allowed_list = db.query(AllowedEmail).filter(AllowedEmail.admin_id == target_session.admin_id).all()
     else:
-        allowed_list = db.query(AllowedEmail).all()
+        allowed_list = db.query(AllowedEmail).filter(AllowedEmail.admin_id == admin_id).all()
         
     # Also get all regular students
     regular_users = db.query(User).filter(User.role == "USER").all()
     user_by_email = {u.email.lower().strip(): u for u in regular_users}
     
-    # Build student roster (Strictly non-admins and strictly this admin's authorized students)
+    # Build student roster
     roster = {}
     for allowed in allowed_list:
         clean_email = allowed.email.lower().strip()
@@ -174,16 +190,17 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
             "user_id": user_id
         }
         
-    # Also include any student who attended this session
-    for r in attendance_records:
-        if r.user and r.user.role == "USER":
-            clean_email = r.user.email.lower().strip()
-            if clean_email not in admin_emails and clean_email not in roster:
-                roster[clean_email] = {
-                    "email": r.user.email,
-                    "name": r.user.full_name,
-                    "user_id": r.user.id
-                }
+    # If Master Admin is viewing, also include any student who attended
+    if is_requester_master:
+        for r in attendance_records:
+            if r.user and r.user.role == "USER":
+                clean_email = r.user.email.lower().strip()
+                if clean_email not in admin_emails and clean_email not in roster:
+                    roster[clean_email] = {
+                        "email": r.user.email,
+                        "name": r.user.full_name,
+                        "user_id": r.user.id
+                    }
 
     # Get all active linked devices
     devices = db.query(UserDevice).filter(UserDevice.is_linked == True).all()
@@ -250,7 +267,6 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
             records.append(item)
             absent_list.append(item)
 
-            
     total = len(roster)
     rate = f"{round((present_count / total) * 100)}%" if total > 0 else "0%"
     
@@ -293,24 +309,47 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
 def get_all_sessions(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     all_admins = {u.id: u for u in db.query(User).filter(User.role == "ADMIN").all()}
     
+    master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
+    master_admin_id = master_admin.id if master_admin else None
+
     if is_master_admin(admin):
         sessions = db.query(AttendanceSession).order_by(AttendanceSession.id.desc()).all()
     else:
-        sessions = db.query(AttendanceSession).filter(AttendanceSession.admin_id == admin.id).order_by(AttendanceSession.id.desc()).all()
+        # Regular admin sees their own sessions + Master Admin global sessions
+        sessions = db.query(AttendanceSession).filter(
+            (AttendanceSession.admin_id == admin.id) | (AttendanceSession.admin_id == master_admin_id)
+        ).order_by(AttendanceSession.id.desc()).all()
         
+    my_whitelisted_emails = set()
+    if not is_master_admin(admin):
+        my_allowed = db.query(AllowedEmail).filter(AllowedEmail.admin_id == admin.id).all()
+        my_whitelisted_emails = {a.email.lower().strip() for a in my_allowed if a.email}
+
     result = []
     for s in sessions:
-        count = db.query(AttendanceRecord).join(User, AttendanceRecord.user_id == User.id).filter(
-            AttendanceRecord.session_id == s.id,
-            User.role == "USER"
-        ).count()
         creator = all_admins.get(s.admin_id)
+        is_global = bool(master_admin_id and s.admin_id == master_admin_id)
+        
+        if is_master_admin(admin) or s.admin_id == admin.id:
+            count = db.query(AttendanceRecord).join(User, AttendanceRecord.user_id == User.id).filter(
+                AttendanceRecord.session_id == s.id,
+                User.role == "USER"
+            ).count()
+        else:
+            # Regular admin viewing Master Admin global session: count only their students
+            count = db.query(AttendanceRecord).join(User, AttendanceRecord.user_id == User.id).filter(
+                AttendanceRecord.session_id == s.id,
+                User.role == "USER",
+                func.lower(User.email).in_(my_whitelisted_emails) if my_whitelisted_emails else False
+            ).count()
+
         result.append({
             "id": s.id,
             "status": s.status,
             "admin_id": s.admin_id,
             "admin_name": creator.full_name if creator else "Master Administrator",
             "admin_email": creator.email if creator else None,
+            "is_global_master": is_global,
             "created_at": to_ist(s.created_at).isoformat() if s.created_at else None,
             "formatted_date": format_ist_date(s.created_at),
             "formatted_time": format_ist_time_short(s.created_at),
@@ -395,14 +434,30 @@ def end_session(db: Session = Depends(get_db), admin: User = Depends(get_current
 
 @router.get("/session/current")
 def get_current_session(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
+    master_admin_id = master_admin.id if master_admin else None
+
+    # Check active session for this admin
     active_session = db.query(AttendanceSession).filter(
         AttendanceSession.admin_id == admin.id,
         AttendanceSession.status == "ACTIVE"
     ).first()
+    
+    is_global_active = False
+    if not active_session and not is_master_admin(admin) and master_admin_id:
+        active_session = db.query(AttendanceSession).filter(
+            AttendanceSession.admin_id == master_admin_id,
+            AttendanceSession.status == "ACTIVE"
+        ).first()
+        if active_session:
+            is_global_active = True
+
     today_session = get_today_session(db, admin_id=admin.id)
+    if not today_session and not is_master_admin(admin) and master_admin_id:
+        today_session = get_today_session(db, admin_id=master_admin_id)
     
     active_otp = None
-    if active_session:
+    if active_session and not is_global_active:
         active_otp = db.query(OTP).filter(
             OTP.session_id == active_session.id, 
             OTP.status == "ACTIVE",
@@ -411,6 +466,7 @@ def get_current_session(db: Session = Depends(get_db), admin: User = Depends(get
     
     return {
         "session": active_session.id if active_session else None,
+        "is_global_session": is_global_active,
         "today_session": {
             "id": today_session.id,
             "status": today_session.status,

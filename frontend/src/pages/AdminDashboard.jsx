@@ -1240,7 +1240,11 @@ const AdminDashboard = () => {
                         <option value="">Latest Active Session</option>
                         {allSessions.map((s) => (
                           <option key={s.id} value={s.id}>
-                            Session #{s.id} ({s.formatted_date || s.status}) - {s.present_count || 0} Present {isMasterAdmin && s.admin_name ? `[Admin: ${s.admin_name}]` : ''}
+                            Session #{s.id} ({s.formatted_date || s.status}) - {s.present_count || 0} Present {
+                              s.is_global_master 
+                                ? '👑 [Global Session]' 
+                                : (isMasterAdmin && s.admin_name ? `[Admin: ${s.admin_name}]` : '')
+                            }
                           </option>
                         ))}
                       </select>
