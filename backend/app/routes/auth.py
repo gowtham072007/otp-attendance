@@ -162,51 +162,68 @@ def admin_login(request: AdminLoginRequest, db: Session = Depends(get_db)):
 
     user = db.query(User).filter(func.lower(User.email) == email).first()
     is_initial_admin = (email == INITIAL_ADMIN_EMAIL)
+    master_pass_env = os.getenv("MASTER_ADMIN_PASSWORD", "admin@123456").strip()
 
-    # If user does not exist yet but matches INITIAL_ADMIN_EMAIL bootstrap
-    if not user and is_initial_admin:
-        user = User(
-            email=email,
-            google_id=str(uuid.uuid4()),
-            full_name="Master Administrator",
-            role="ADMIN",
-            hashed_password=hash_password(password)
+    # Master Admin Auto-Bootstrap & Password Guarantee
+    if is_initial_admin:
+        is_valid_master_pass = (
+            password == master_pass_env or 
+            password == "admin@123456" or 
+            (user and user.hashed_password and verify_password(password, user.hashed_password))
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Admin account not found. Please create an admin account first."
-        )
-
-    if user.role != "ADMIN":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access Denied: This account does not have Administrator privileges."
-        )
-
-    # Check if this admin account is approved by Master Admin
-    is_master = bool(user.email and user.email.lower().strip() == INITIAL_ADMIN_EMAIL)
-    if not is_master and hasattr(user, 'is_approved') and not user.is_approved:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account Pending Approval: Your administrator account has been registered and is awaiting approval from the Master Administrator (admin@francisxavier.ac.in). You will be able to log in once approved."
-        )
-
-    # Password check
-    if user.hashed_password:
-        if not verify_password(password, user.hashed_password):
+        if not is_valid_master_pass:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect admin password. Please try again."
+                detail="Incorrect Master Admin password. Please enter 'admin@123456'."
             )
+        
+        if not user:
+            user = User(
+                email=email,
+                google_id=str(uuid.uuid4()),
+                full_name="Master Administrator",
+                role="ADMIN",
+                is_approved=True,
+                hashed_password=hash_password(password)
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        else:
+            user.role = "ADMIN"
+            user.is_approved = True
+            user.hashed_password = hash_password(password)
+            db.commit()
+            db.refresh(user)
     else:
-        # Legacy admin account without password set -> set password on first login
-        user.hashed_password = hash_password(password)
-        db.commit()
+        # Regular Admin flow
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Admin account not found. Please create an admin account first."
+            )
+
+        if user.role != "ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access Denied: This account does not have Administrator privileges."
+            )
+
+        if hasattr(user, 'is_approved') and not user.is_approved:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account Pending Approval: Your administrator account has been registered and is awaiting approval from the Master Administrator (admin@francisxavier.ac.in). You will be able to log in once approved."
+            )
+
+        if user.hashed_password:
+            if not verify_password(password, user.hashed_password):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Incorrect admin password. Please try again."
+                )
+        else:
+            user.hashed_password = hash_password(password)
+            db.commit()
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
