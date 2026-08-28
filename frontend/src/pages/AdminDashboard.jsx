@@ -777,7 +777,10 @@ const AdminDashboard = () => {
     <div className="min-h-screen bg-[#fafafa] dark:bg-[#09090b] bg-grid-pattern flex flex-col text-zinc-900 dark:text-zinc-100 font-sans transition-colors duration-200">
       {/* Top Navigation */}
       <nav className="bg-white/90 dark:bg-zinc-950/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 flex justify-between items-center sticky top-0 z-20 shadow-xs">
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-3.5">
+          <div className="w-10 h-10 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-white p-0.5 shadow-xs flex items-center justify-center shrink-0">
+            <img src="/logo.png" alt="Attendance Logo" className="w-full h-full object-contain rounded-lg" />
+          </div>
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-lg font-black text-black dark:text-white tracking-tight">Admin Dashboard</h1>

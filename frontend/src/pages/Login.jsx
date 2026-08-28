@@ -148,13 +148,19 @@ const Login = () => {
         {/* Left Column: Branding and System Highlights */}
         <div className="hidden md:flex flex-col space-y-8 pr-6">
           <div className="space-y-4">
-            <div className="flex items-center space-x-3 mb-2">
-              <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 bg-black text-white dark:bg-white dark:text-black text-xs font-mono tracking-wider uppercase rounded-full w-fit shadow-xs">
-                <span>● Attendance OS</span>
+            <div className="flex items-center space-x-3.5 mb-3">
+              <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-md border border-zinc-200 dark:border-zinc-800 bg-white p-1 flex items-center justify-center shrink-0">
+                <img src="/logo.png" alt="Attendance OS Logo" className="w-full h-full object-contain rounded-xl" />
               </div>
-              <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-[11px] font-mono rounded-full">
-                <Smartphone size={12} />
-                <span>1 Device = 1 User</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 bg-black text-white dark:bg-white dark:text-black text-xs font-mono tracking-wider uppercase rounded-full w-fit shadow-xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                  <span>Attendance OS</span>
+                </div>
+                <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-[11px] font-mono rounded-full">
+                  <Smartphone size={12} />
+                  <span>1 Device = 1 User</span>
+                </div>
               </div>
             </div>
             
@@ -192,6 +198,17 @@ const Login = () => {
 
         {/* Right Column: Unified Auth Panel */}
         <div className="glass-panel p-6 sm:p-8 md:p-10 rounded-3xl w-full max-w-md mx-auto border border-zinc-200/80 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/90 shadow-2xl backdrop-blur-md">
+          
+          {/* Mobile Brand Logo */}
+          <div className="md:hidden flex flex-col items-center mb-6">
+            <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-md border border-zinc-200 dark:border-zinc-800 bg-white p-1 flex items-center justify-center mb-2">
+              <img src="/logo.png" alt="Attendance OS Logo" className="w-full h-full object-contain rounded-xl" />
+            </div>
+            <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-black text-white dark:bg-white dark:text-black text-xs font-mono tracking-wider uppercase rounded-full shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+              <span>Attendance OS</span>
+            </div>
+          </div>
           
           {/* Main Role Switcher Tabs */}
           <div className="grid grid-cols-2 p-1 bg-zinc-100 dark:bg-zinc-800/80 rounded-2xl mb-6 border border-zinc-200 dark:border-zinc-700/80">
