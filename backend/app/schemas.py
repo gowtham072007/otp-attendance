@@ -104,8 +104,13 @@ class AllowedEmailCreate(BaseModel):
     email: str
     name: Optional[str] = None
 
+class AllowedEmailItem(BaseModel):
+    email: str
+    name: Optional[str] = None
+
 class AllowedEmailBulkCreate(BaseModel):
-    emails: List[str]
+    emails: Optional[List[str]] = None
+    records: Optional[List[AllowedEmailItem]] = None
 
 class AllowedEmailResponse(BaseModel):
     id: int

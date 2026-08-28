@@ -814,43 +814,116 @@ def add_allowed_email(payload: AllowedEmailCreate, db: Session = Depends(get_db)
         created_at=new_allowed.created_at
     )
 
+@router.get("/allowed-emails/export")
+def export_allowed_emails(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """Export authorized student whitelist as a downloadable CSV file."""
+    query = db.query(AllowedEmail)
+    if not is_master_admin(admin):
+        query = query.filter(AllowedEmail.admin_id == admin.id)
+    
+    records = query.order_by(AllowedEmail.created_at.desc()).all()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # 1. Header Metadata Section
+    writer.writerow(["================================================================================"])
+    writer.writerow(["AUTHORIZED STUDENTS DIRECTORY - FRANCIS XAVIER ENGINEERING COLLEGE"])
+    writer.writerow(["================================================================================"])
+    writer.writerow(["Export Generated On (IST)", datetime.now(IST).strftime('%d-%m-%Y, %I:%M:%S %p')])
+    writer.writerow(["Exported By", f"{admin.full_name or 'Administrator'} ({admin.email})"])
+    writer.writerow(["Scope", "All Administrators" if is_master_admin(admin) else "Assigned Department / Instructor"])
+    writer.writerow(["Total Authorized Students", len(records)])
+    writer.writerow([])
+    
+    # 2. Table Headers
+    writer.writerow(["S.No", "Student Email", "Student Name", "Authorized By Admin", "Added On (IST)"])
+    
+    admin_cache = {}
+    for idx, rec in enumerate(records, start=1):
+        if rec.admin_id:
+            if rec.admin_id not in admin_cache:
+                adm = db.query(User).filter(User.id == rec.admin_id).first()
+                admin_cache[rec.admin_id] = f"{adm.full_name or 'Admin'} ({adm.email})" if adm else "System"
+            adm_str = admin_cache[rec.admin_id]
+        else:
+            adm_str = "Master Admin"
+            
+        created_str = rec.created_at.astimezone(IST).strftime('%d-%m-%Y, %I:%M %p') if rec.created_at else "—"
+        writer.writerow([idx, rec.email, rec.name or "—", adm_str, created_str])
+        
+    output.seek(0)
+    filename = f"authorized_students_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
 @router.post("/allowed-emails/bulk")
 def add_bulk_allowed_emails(payload: AllowedEmailBulkCreate, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     added_count = 0
     skipped_count = 0
     errors = []
     
+    # Fetch admin emails to prevent whitelisting admin emails as students
     admin_emails = {a.email.lower().strip() for a in db.query(User).filter(User.role == "ADMIN").all() if a.email}
 
-    for raw_email in payload.emails:
-        clean = raw_email.strip().lower()
-        if not clean:
+    # Normalize items from either records (CSV structured with name) or emails (simple list)
+    items_to_process = []
+    if payload.records:
+        for r in payload.records:
+            if r and r.email:
+                items_to_process.append({"email": r.email, "name": r.name})
+    if payload.emails:
+        for e in payload.emails:
+            if e:
+                items_to_process.append({"email": e, "name": None})
+
+    if not items_to_process:
+        raise HTTPException(status_code=400, detail="No student email records provided.")
+
+    for item in items_to_process:
+        raw_email = str(item.get("email", "")).strip()
+        raw_name = item.get("name")
+        clean_email = raw_email.lower()
+        clean_name = str(raw_name).strip() if raw_name else None
+
+        if not clean_email:
             continue
-        if "@" not in clean or "." not in clean:
+        if "@" not in clean_email or "." not in clean_email:
             skipped_count += 1
-            errors.append(f"Invalid email: {raw_email}")
+            errors.append(f"Invalid email format: '{raw_email}'")
             continue
         
-        if clean in admin_emails:
+        if clean_email in admin_emails:
             skipped_count += 1
-            errors.append(f"Skipped admin account email: {raw_email}")
+            errors.append(f"Skipped admin account email (User accounts only): '{raw_email}'")
             continue
 
         existing = db.query(AllowedEmail).filter(
             AllowedEmail.admin_id == admin.id,
-            func.lower(AllowedEmail.email) == clean
+            func.lower(AllowedEmail.email) == clean_email
         ).first()
+        
         if existing:
+            # If name was provided and existing didn't have a name, update it
+            if clean_name and not existing.name:
+                existing.name = clean_name
             skipped_count += 1
             continue
             
-        new_entry = AllowedEmail(admin_id=admin.id, email=clean, name=None)
+        new_entry = AllowedEmail(
+            admin_id=admin.id, 
+            email=clean_email, 
+            name=clean_name
+        )
         db.add(new_entry)
         added_count += 1
         
     db.commit()
     return {
-        "message": f"Successfully added {added_count} student emails. {skipped_count} skipped.",
+        "message": f"Successfully processed {len(items_to_process)} records: {added_count} student users added, {skipped_count} skipped.",
         "added_count": added_count,
         "skipped_count": skipped_count,
         "errors": errors

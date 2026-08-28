@@ -33,7 +33,12 @@ import {
   Shield,
   Lock,
   Eye,
-  EyeOff
+  EyeOff,
+  Upload,
+  FileSpreadsheet,
+  FileText,
+  FileDown,
+  X
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -129,6 +134,11 @@ const AdminDashboard = () => {
   const [newName, setNewName] = useState('');
   const [bulkEmails, setBulkEmails] = useState('');
   const [showBulkInput, setShowBulkInput] = useState(false);
+  const [bulkMode, setBulkMode] = useState('csv'); // 'csv' | 'text'
+  const [csvFile, setCsvFile] = useState(null);
+  const [parsedCsvRecords, setParsedCsvRecords] = useState([]);
+  const [csvParseError, setCsvParseError] = useState('');
+  const [exportingWhitelist, setExportingWhitelist] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [whitelistSuccess, setWhitelistSuccess] = useState('');
@@ -696,34 +706,215 @@ const AdminDashboard = () => {
     }
   };
 
+  // Robust client-side CSV parser
+  const parseCsvContent = (text) => {
+    setCsvParseError('');
+    if (!text || !text.trim()) {
+      setCsvParseError('The uploaded CSV file is empty.');
+      setParsedCsvRecords([]);
+      return;
+    }
+
+    const lines = text.split(/\r\n|\n|\r/).map((l) => l.trim()).filter((l) => l.length > 0);
+    if (lines.length === 0) {
+      setCsvParseError('No valid rows found in CSV file.');
+      setParsedCsvRecords([]);
+      return;
+    }
+
+    // Determine delimiter (comma, tab, semicolon)
+    const firstLine = lines[0];
+    let delimiter = ',';
+    if (firstLine.includes('\t')) delimiter = '\t';
+    else if (firstLine.includes(';') && !firstLine.includes(',')) delimiter = ';';
+
+    const parseLine = (line) => {
+      const pattern = new RegExp(`(?:^|${delimiter})(?:"([^"]*)"|([^"${delimiter}]*))`, 'g');
+      const cells = [];
+      let match;
+      while ((match = pattern.exec(line)) !== null) {
+        let val = match[1] !== undefined ? match[1] : match[2];
+        cells.push((val || '').trim());
+      }
+      return cells;
+    };
+
+    const headerCells = parseLine(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    let emailIdx = -1;
+    let nameIdx = -1;
+    let startRow = 0;
+
+    // Check if first row is header
+    const hasEmailHeader = headerCells.some((h, i) => {
+      if (h.includes('email') || h.includes('mail')) {
+        emailIdx = i;
+        return true;
+      }
+      return false;
+    });
+
+    headerCells.forEach((h, i) => {
+      if (h.includes('name') || h.includes('student') || h.includes('fullname')) {
+        nameIdx = i;
+      }
+    });
+
+    if (hasEmailHeader) {
+      startRow = 1;
+    } else {
+      emailIdx = 0;
+      nameIdx = 1;
+      for (let r = 0; r < Math.min(lines.length, 5); r++) {
+        const cells = parseLine(lines[r]);
+        cells.forEach((cell, idx) => {
+          if (cell.includes('@') && cell.includes('.')) {
+            emailIdx = idx;
+          }
+        });
+      }
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const records = [];
+    const seenEmails = new Set();
+
+    for (let i = startRow; i < lines.length; i++) {
+      const cells = parseLine(lines[i]);
+      if (cells.length === 0) continue;
+
+      let email = (cells[emailIdx] || '').trim().toLowerCase();
+      if (!emailRegex.test(email)) {
+        const found = cells.find((c) => emailRegex.test(c.trim()));
+        if (found) email = found.trim().toLowerCase();
+      }
+
+      if (email && emailRegex.test(email)) {
+        if (!seenEmails.has(email)) {
+          seenEmails.add(email);
+          let name = nameIdx !== -1 && nameIdx !== emailIdx ? (cells[nameIdx] || '').trim() : '';
+          if (!name) {
+            const candidate = cells.find((c, idx) => idx !== emailIdx && c.trim().length > 0 && !c.includes('@'));
+            if (candidate) name = candidate.trim();
+          }
+          records.push({ email, name: name || null });
+        }
+      }
+    }
+
+    if (records.length === 0) {
+      setCsvParseError('No valid student email addresses found in the CSV. Please ensure emails contain "@" and "."');
+      setParsedCsvRecords([]);
+      return;
+    }
+
+    setParsedCsvRecords(records);
+  };
+
+  const handleCsvFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setCsvFile(file);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      parseCsvContent(event.target?.result);
+    };
+    reader.onerror = () => {
+      setCsvParseError('Failed to read the selected CSV file.');
+    };
+    reader.readAsText(file);
+  };
+
+  const handleDownloadCsvTemplate = () => {
+    const templateContent = "email,name\nstudent1@francisxavier.ac.in,John Doe\nstudent2@francisxavier.ac.in,Jane Smith\nstudent3@francisxavier.ac.in,Alex Kumar\n";
+    const blob = new Blob([templateContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'student_whitelist_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportWhitelistCsv = async () => {
+    setExportingWhitelist(true);
+    try {
+      const response = await api.get('/admin/allowed-emails/export', {
+        responseType: 'blob'
+      });
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `authorized_students_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      // Client-side fallback if network error
+      if (allowedEmails.length > 0) {
+        let csvContent = "S.No,Student Email,Student Name,Added On\n";
+        allowedEmails.forEach((item, idx) => {
+          csvContent += `${idx + 1},"${item.email}","${item.name || ''}","${item.created_at || ''}"\n`;
+        });
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `authorized_students_${new Date().toISOString().slice(0, 10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } else {
+        alert('No authorized student accounts to export.');
+      }
+    } finally {
+      setExportingWhitelist(false);
+    }
+  };
+
   const handleAddBulkEmails = async (e) => {
     e.preventDefault();
     setWhitelistError('');
     setWhitelistSuccess('');
 
-    const emailList = bulkEmails
-      .split(/[\n,]+/)
-      .map((e) => e.trim())
-      .filter((e) => e.length > 0);
+    let payload = {};
+    if (bulkMode === 'csv') {
+      if (parsedCsvRecords.length === 0) {
+        setWhitelistError('Please select a valid CSV file with student records.');
+        return;
+      }
+      payload = { records: parsedCsvRecords };
+    } else {
+      const emailList = bulkEmails
+        .split(/[\n,;]+/)
+        .map((e) => e.trim())
+        .filter((e) => e.length > 0);
 
-    if (emailList.length === 0) {
-      setWhitelistError('Please enter at least one email address.');
-      return;
+      if (emailList.length === 0) {
+        setWhitelistError('Please enter at least one email address.');
+        return;
+      }
+      payload = { emails: emailList };
     }
 
     setActionLoading(true);
     try {
-      const res = await api.post('/admin/allowed-emails/bulk', {
-        emails: emailList
-      });
-      setWhitelistSuccess(res.data.message);
+      const res = await api.post('/admin/allowed-emails/bulk', payload);
+      setWhitelistSuccess(res.data.message || `Successfully added ${bulkMode === 'csv' ? parsedCsvRecords.length : 'all'} student records.`);
       setBulkEmails('');
+      setCsvFile(null);
+      setParsedCsvRecords([]);
       setShowBulkInput(false);
       fetchAllowedEmails();
       fetchAttendance(selectedSessionId);
-      setTimeout(() => setWhitelistSuccess(''), 5000);
+      setTimeout(() => setWhitelistSuccess(''), 6000);
     } catch (err) {
-      setWhitelistError(err.response?.data?.detail || 'Failed to bulk add emails');
+      setWhitelistError(err.response?.data?.detail || 'Failed to bulk import student records');
     } finally {
       setActionLoading(false);
     }
@@ -1641,35 +1832,165 @@ const AdminDashboard = () => {
                   <button
                     type="button"
                     onClick={() => setShowBulkInput(!showBulkInput)}
-                    className="w-full text-center text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white transition py-2"
+                    className="w-full flex items-center justify-center space-x-1.5 text-center text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white transition py-2 cursor-pointer"
                   >
-                    {showBulkInput ? "← Hide Bulk Import" : "⚡ Paste Multiple Emails (Bulk Import)"}
+                    <FileSpreadsheet size={14} className="text-emerald-500" />
+                    <span>{showBulkInput ? "← Hide Bulk Import" : "⚡ Bulk Upload (CSV File / Paste)"}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Bulk Add Card */}
+              {/* Enhanced Bulk Add & CSV Upload Card */}
               {showBulkInput && (
-                <div className="bg-white dark:bg-zinc-900/90 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 flex flex-col">
-                  <div className="mb-3">
-                    <h3 className="text-sm font-black uppercase tracking-wider text-black dark:text-white">Bulk Email Import</h3>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Paste multiple email addresses separated by commas or new lines.</p>
+                <div className="bg-white dark:bg-zinc-900/90 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 flex flex-col space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-wider text-black dark:text-white">Bulk Student Whitelist</h3>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Import student user accounts via CSV file or direct text paste.</p>
+                    </div>
                   </div>
-                  <form onSubmit={handleAddBulkEmails} className="space-y-3">
-                    <textarea
-                      rows={5}
-                      placeholder={`student1@francisxavier.ac.in\nstudent2@francisxavier.ac.in\nstudent3@francisxavier.ac.in`}
-                      value={bulkEmails}
-                      onChange={(e) => setBulkEmails(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/60 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800 outline-none transition font-mono text-xs"
-                    />
+
+                  {/* Mode Selector Tabs */}
+                  <div className="grid grid-cols-2 p-1 bg-zinc-100 dark:bg-zinc-800/80 rounded-xl border border-zinc-200 dark:border-zinc-700/80">
                     <button
-                      type="submit"
-                      disabled={actionLoading}
-                      className="w-full flex items-center justify-center space-x-2 bg-zinc-800 hover:bg-black dark:bg-zinc-800 dark:hover:bg-zinc-700 text-white py-3 rounded-xl font-bold transition text-xs uppercase font-mono tracking-wider shadow-xs disabled:opacity-50"
+                      type="button"
+                      onClick={() => { setBulkMode('csv'); setCsvParseError(''); }}
+                      className={`py-2 text-xs font-bold font-mono uppercase tracking-wider rounded-lg transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
+                        bulkMode === 'csv'
+                          ? 'bg-white dark:bg-zinc-900 text-black dark:text-white shadow-xs'
+                          : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
+                      }`}
                     >
-                      <span>Import Emails</span>
+                      <FileSpreadsheet size={13} className={bulkMode === 'csv' ? "text-emerald-500" : ""} />
+                      <span>CSV Upload</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => { setBulkMode('text'); setCsvParseError(''); }}
+                      className={`py-2 text-xs font-bold font-mono uppercase tracking-wider rounded-lg transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
+                        bulkMode === 'text'
+                          ? 'bg-white dark:bg-zinc-900 text-black dark:text-white shadow-xs'
+                          : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
+                      }`}
+                    >
+                      <FileText size={13} />
+                      <span>Text Paste</span>
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleAddBulkEmails} className="space-y-3">
+                    {/* CSV FILE MODE */}
+                    {bulkMode === 'csv' && (
+                      <div className="space-y-3">
+                        {/* Sample CSV Download pill */}
+                        <div className="flex items-center justify-between text-xs bg-zinc-50 dark:bg-zinc-950/60 p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                          <div className="flex items-center space-x-2 text-zinc-600 dark:text-zinc-400">
+                            <FileSpreadsheet size={14} className="text-emerald-500" />
+                            <span>Columns: <strong>email</strong>, <strong>name</strong> (optional)</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleDownloadCsvTemplate}
+                            className="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-400 hover:underline font-bold text-[11px] cursor-pointer"
+                          >
+                            <FileDown size={12} />
+                            <span>Sample CSV</span>
+                          </button>
+                        </div>
+
+                        {/* File Dropzone Input */}
+                        <label
+                          htmlFor="whitelist-csv-input"
+                          className="flex flex-col items-center justify-center border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-black dark:hover:border-white rounded-2xl p-5 cursor-pointer bg-zinc-50/40 dark:bg-zinc-950/40 transition-colors group text-center"
+                        >
+                          <input
+                            id="whitelist-csv-input"
+                            type="file"
+                            accept=".csv,text/csv,application/vnd.ms-excel"
+                            onChange={handleCsvFileChange}
+                            className="hidden"
+                          />
+                          <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl group-hover:scale-105 transition-transform text-black dark:text-white border border-zinc-200 dark:border-zinc-700 mb-2">
+                            <Upload size={20} />
+                          </div>
+                          <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                            {csvFile ? csvFile.name : "Click to select or drop CSV file"}
+                          </p>
+                          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                            {csvFile ? `${(csvFile.size / 1024).toFixed(1)} KB` : "Supports standard .csv student lists"}
+                          </p>
+                        </label>
+
+                        {/* Error Alert */}
+                        {csvParseError && (
+                          <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-900/60 text-red-700 dark:text-red-300 text-xs flex items-start space-x-2">
+                            <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                            <p>{csvParseError}</p>
+                          </div>
+                        )}
+
+                        {/* Parsed Preview */}
+                        {parsedCsvRecords.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80 text-[11px] font-mono font-bold rounded-lg">
+                                <CheckCircle size={12} />
+                                <span>{parsedCsvRecords.length} Student Users Ready</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => { setCsvFile(null); setParsedCsvRecords([]); setCsvParseError(''); }}
+                                className="text-[11px] text-zinc-500 hover:text-red-500 flex items-center space-x-1 cursor-pointer"
+                              >
+                                <X size={12} />
+                                <span>Clear</span>
+                              </button>
+                            </div>
+
+                            <div className="max-h-36 overflow-y-auto space-y-1 p-2 bg-zinc-50 dark:bg-zinc-950 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-mono">
+                              {parsedCsvRecords.slice(0, 50).map((item, idx) => (
+                                <div key={idx} className="flex items-center justify-between text-zinc-700 dark:text-zinc-300 py-0.5 border-b border-zinc-100 dark:border-zinc-900 last:border-0">
+                                  <span className="truncate max-w-[180px] font-medium">{item.email}</span>
+                                  <span className="text-zinc-400 text-[10px] truncate max-w-[100px]">{item.name || '—'}</span>
+                                </div>
+                              ))}
+                              {parsedCsvRecords.length > 50 && (
+                                <p className="text-center text-[10px] text-zinc-400 pt-1">+ {parsedCsvRecords.length - 50} more students</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={actionLoading || parsedCsvRecords.length === 0}
+                          className="w-full flex items-center justify-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white py-3.5 rounded-xl font-bold transition text-xs uppercase font-mono tracking-wider shadow-md disabled:opacity-50 cursor-pointer"
+                        >
+                          <Upload size={14} />
+                          <span>{actionLoading ? 'Importing CSV Records...' : `Import ${parsedCsvRecords.length > 0 ? parsedCsvRecords.length : ''} Students`}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* TEXT PASTE MODE */}
+                    {bulkMode === 'text' && (
+                      <div className="space-y-3">
+                        <textarea
+                          rows={5}
+                          placeholder={`student1@francisxavier.ac.in\nstudent2@francisxavier.ac.in\nstudent3@francisxavier.ac.in`}
+                          value={bulkEmails}
+                          onChange={(e) => setBulkEmails(e.target.value)}
+                          className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/60 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800 outline-none transition font-mono text-xs"
+                        />
+                        <button
+                          type="submit"
+                          disabled={actionLoading}
+                          className="w-full flex items-center justify-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white py-3.5 rounded-xl font-bold transition text-xs uppercase font-mono tracking-wider shadow-md disabled:opacity-50 cursor-pointer"
+                        >
+                          <span>{actionLoading ? 'Importing...' : 'Import Emails'}</span>
+                        </button>
+                      </div>
+                    )}
                   </form>
                 </div>
               )}
@@ -1705,16 +2026,28 @@ const AdminDashboard = () => {
                   </p>
                 </div>
 
-                {/* Search Bar */}
-                <div className="relative w-full sm:w-64">
-                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-                  <input
-                    type="text"
-                    placeholder="Search email or name..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-black dark:focus:border-white transition"
-                  />
+                {/* Search Bar & Export Button */}
+                <div className="flex items-center space-x-2 w-full sm:w-auto">
+                  <div className="relative flex-1 sm:w-64">
+                    <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                    <input
+                      type="text"
+                      placeholder="Search email or name..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-black dark:focus:border-white transition font-medium"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleExportWhitelistCsv}
+                    disabled={exportingWhitelist || allowedEmails.length === 0}
+                    className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-zinc-700 dark:text-zinc-200 shadow-2xs transition disabled:opacity-50 cursor-pointer shrink-0"
+                    title="Export all authorized students as CSV"
+                  >
+                    <Download size={13} className="text-emerald-500" />
+                    <span>{exportingWhitelist ? "Exporting..." : "Export CSV"}</span>
+                  </button>
                 </div>
               </div>
 
