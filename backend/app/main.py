@@ -81,24 +81,43 @@ def migrate_db():
 migrate_db()
 
 def seed_initial_admin():
-    """Ensure master administrator user account exists."""
-    initial_admin = os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower()
+    """Ensure master administrator user account exists with designated master password."""
+    initial_admin = os.getenv("INITIAL_ADMIN_EMAIL", "admin@francisxavier.ac.in").strip().lower()
     if initial_admin and "@" in initial_admin:
         db = SessionLocal()
         try:
-            exists = db.query(User).filter(User.email == initial_admin).first()
-            if not exists:
-                import uuid
+            try:
+                from .auth.utils import hash_password
+            except Exception:
+                from app.auth.utils import hash_password
+
+            from sqlalchemy import func
+            import uuid
+
+            master_password = os.getenv("MASTER_ADMIN_PASSWORD", "admin@123456")
+            hashed_pwd = hash_password(master_password)
+
+            admin_user = db.query(User).filter(func.lower(User.email) == initial_admin).first()
+            if not admin_user:
                 admin_user = User(
                     email=initial_admin,
                     full_name="Master Administrator",
                     role="ADMIN",
-                    google_id=str(uuid.uuid4())
+                    google_id=str(uuid.uuid4()),
+                    hashed_password=hashed_pwd,
+                    is_approved=True
                 )
                 db.add(admin_user)
                 db.commit()
+                print(f"[BOOTSTRAP] Master Admin seeded: {initial_admin}")
+            else:
+                admin_user.role = "ADMIN"
+                admin_user.is_approved = True
+                admin_user.hashed_password = hashed_pwd
+                db.commit()
+                print(f"[BOOTSTRAP] Master Admin password synchronized: {initial_admin}")
         except Exception as e:
-            print("Error seeding initial admin:", e)
+            print("Error seeding/updating initial admin:", e)
         finally:
             db.close()
 
