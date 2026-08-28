@@ -125,12 +125,54 @@ frontend_dist_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirnam
 if os.path.isdir(frontend_dist_path):
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist_path, "assets")), name="assets")
 
-    # Catch-all route to serve React's index.html for client-side routing
+    # Explicit favicon and root asset handlers
+    @app.get("/favicon.ico", include_in_schema=False)
+    def serve_favicon_ico():
+        ico_path = os.path.join(frontend_dist_path, "favicon.ico")
+        if os.path.isfile(ico_path):
+            return FileResponse(ico_path, media_type="image/x-icon")
+        return {"detail": "Not Found"}
+
+    @app.get("/favicon.png", include_in_schema=False)
+    def serve_favicon_png():
+        png_path = os.path.join(frontend_dist_path, "favicon.png")
+        if os.path.isfile(png_path):
+            return FileResponse(png_path, media_type="image/png")
+        return {"detail": "Not Found"}
+
+    @app.get("/favicon.svg", include_in_schema=False)
+    def serve_favicon_svg():
+        svg_path = os.path.join(frontend_dist_path, "favicon.svg")
+        if os.path.isfile(svg_path):
+            return FileResponse(svg_path, media_type="image/svg+xml")
+        return {"detail": "Not Found"}
+
+    @app.get("/logo.png", include_in_schema=False)
+    def serve_logo_png():
+        logo_path = os.path.join(frontend_dist_path, "logo.png")
+        if os.path.isfile(logo_path):
+            return FileResponse(logo_path, media_type="image/png")
+        return {"detail": "Not Found"}
+
+    @app.get("/manifest.json", include_in_schema=False)
+    def serve_manifest():
+        manifest_path = os.path.join(frontend_dist_path, "manifest.json")
+        if os.path.isfile(manifest_path):
+            return FileResponse(manifest_path, media_type="application/json")
+        return {"detail": "Not Found"}
+
+    # Catch-all route to serve static files from dist or fallback to React's index.html
     @app.get("/{catchall:path}")
     def serve_frontend(catchall: str):
         # Prevent the catch-all from interfering with non-existent /api routes
         if catchall.startswith("api/"):
             return {"detail": "Not Found"}
+        
+        # Check if the requested file exists in dist (e.g. apple-touch-icon.png, logo-192.png)
+        file_path = os.path.join(frontend_dist_path, catchall)
+        if catchall and os.path.isfile(file_path):
+            return FileResponse(file_path)
+
         response = FileResponse(os.path.join(frontend_dist_path, "index.html"))
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
