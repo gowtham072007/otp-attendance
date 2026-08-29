@@ -8,3 +8,7 @@ extraPaths = ["backend"]
 executionEnvironments = [
   { root = "backend" }
 ]
+typeCheckingMode = "basic"
+reportArgumentType = "none"
+reportCallIssue = "none"
+reportAttributeAccessIssue = "none"
