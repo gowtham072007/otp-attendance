@@ -2,7 +2,7 @@ import os
 import math
 import random
 import string
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from sqlalchemy import func
@@ -24,13 +24,14 @@ except (ImportError, ValueError):
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 INITIAL_ADMIN_EMAIL = os.getenv("INITIAL_ADMIN_EMAIL", "admin@francisxavier.ac.in").strip().lower()
 
-def calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+def calculate_distance_meters(lat1: Any, lon1: Any, lat2: Any, lon2: Any) -> float:
     """Calculate the great-circle distance between two points on the Earth using Haversine formula."""
     R = 6371000.0  # Earth's radius in meters
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    delta_phi = math.radians(lat2 - lat1)
-    delta_lambda = math.radians(lon2 - lon1)
+    f_lat1, f_lon1, f_lat2, f_lon2 = float(lat1), float(lon1), float(lat2), float(lon2)
+    phi1 = math.radians(f_lat1)
+    phi2 = math.radians(f_lat2)
+    delta_phi = math.radians(f_lat2 - f_lat1)
+    delta_lambda = math.radians(f_lon2 - f_lon1)
     
     a = math.sin(delta_phi / 2.0)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0)**2
     c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
@@ -39,18 +40,18 @@ def calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float
 # --- Indian Standard Time (IST) Helpers ---
 IST = timezone(timedelta(hours=5, minutes=30), name="IST")
 
-def to_ist(dt: Optional[datetime]) -> Optional[datetime]:
-    if not dt:
+def to_ist(dt: Any) -> Optional[datetime]:
+    if not dt or not isinstance(dt, datetime):
         return None
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc).astimezone(IST)
     return dt.astimezone(IST)
 
-def format_ist_date(dt: Optional[datetime]) -> str:
+def format_ist_date(dt: Any) -> str:
     ist_dt = to_ist(dt)
     return ist_dt.strftime("%d-%m-%Y") if ist_dt else "—"
 
-def format_ist_time(dt: Optional[datetime]) -> str:
+def format_ist_time(dt: Any) -> str:
     ist_dt = to_ist(dt)
     return ist_dt.strftime("%I:%M %p") if ist_dt else "—"
 
@@ -176,7 +177,7 @@ def get_session_status(db: Session = Depends(get_db), current_user: User = Depen
             "date": format_ist_date(my_record.timestamp),
             "status": my_record.status,
             "distance_meters": my_record.distance_meters,
-            "session": f"Session {target_session.id:02d}"
+            "session": f"Session {int(my_record.session_id):02d}"
         } if my_record else None,
         "target_location": {
             "venue_name": geofence.venue_name,
@@ -265,7 +266,7 @@ def auto_dispatch_otp(
         # Invalidate old OTPs
         old_otps = db.query(OTP).filter(OTP.session_id == active_session.id, OTP.status == "ACTIVE").all()
         for old in old_otps:
-            old.status = "INVALIDATED"
+            setattr(old, 'status', 'INVALIDATED')
         
         # Generate fresh OTP valid for 60 seconds
         otp_code = ''.join(random.choices(string.digits, k=6))
@@ -283,11 +284,11 @@ def auto_dispatch_otp(
     # 6. Send Email in background task
     background_tasks.add_task(
         send_otp_email,
-        to_email=current_user.email,
-        student_name=current_user.full_name or "Student",
-        otp_code=active_otp.otp_code,
-        session_id=active_session.id,
-        venue_name=geofence.venue_name
+        to_email=str(current_user.email),
+        student_name=str(current_user.full_name or "Student"),
+        otp_code=str(active_otp.otp_code),
+        session_id=int(active_session.id),
+        venue_name=str(geofence.venue_name)
     )
 
     return {
@@ -308,7 +309,7 @@ def mark_attendance(submission: AttendanceSubmission, request: Request, db: Sess
     if current_user.role != "USER":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access Denied: Only students can mark attendance. Administrator accounts are excluded from Attendance Records."
+            detail="Access Denied: Only students can mark attendance. Administrator accounts are excluded."
         )
 
     # Device lock check
@@ -317,15 +318,26 @@ def mark_attendance(submission: AttendanceSubmission, request: Request, db: Sess
         if client_device_id and current_user.device.device_id != client_device_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Device Mismatch: Attendance must be submitted from your registered device."
+                detail="Device Mismatch: Attendance can only be marked from your registered device."
             )
 
     # Find active session scoped for this student
     active_session = get_active_session_for_student(db, current_user)
     if not active_session:
-        raise HTTPException(status_code=400, detail="No active attendance session currently running for your class or administrator.")
-
-    # Geofence location verification
+        raise HTTPException(
+            status_code=400,
+            detail="No active attendance session currently running for your class."
+        )
+        
+    # Check if student already marked attendance
+    existing = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == active_session.id,
+        AttendanceRecord.user_id == current_user.id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Attendance Already Marked. You cannot mark attendance again for this session.")
+        
+    # Geofence location check
     if submission.latitude is None or submission.longitude is None:
         raise HTTPException(
             status_code=400,
@@ -356,13 +368,14 @@ def mark_attendance(submission: AttendanceSubmission, request: Request, db: Sess
         raise HTTPException(status_code=400, detail="Invalid OTP. Please enter the current OTP displayed by the Admin.")
     
     # Check expiry
+    current_utc = datetime.now(timezone.utc)
     if otp_record.expires_at.tzinfo is None:
         # If naive, compare with naive UTC
-        if otp_record.expires_at < datetime.utcnow():
+        if otp_record.expires_at.replace(tzinfo=timezone.utc) < current_utc:
             raise HTTPException(status_code=400, detail="OTP Expired. Please ask the Admin for the new OTP.")
     else:
         # If aware, compare with aware UTC
-        if otp_record.expires_at < datetime.now(timezone.utc):
+        if otp_record.expires_at < current_utc:
             raise HTTPException(status_code=400, detail="OTP Expired. Please ask the Admin for the new OTP.")
             
     # Record attendance
