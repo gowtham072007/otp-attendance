@@ -12,73 +12,71 @@ except (ImportError, ValueError):
     from app.models import User, AllowedEmail
     from app.routes import auth, admin, attendance
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
-
 def migrate_db():
     """Ensure newly added columns exist in existing database tables."""
     from sqlalchemy import text
-    with engine.connect() as conn:
-        # Check and add columns to attendance_records
-        for col_name, col_type in [
-            ("latitude", "FLOAT"),
-            ("longitude", "FLOAT"),
-            ("distance_meters", "FLOAT")
-        ]:
+    try:
+        with engine.connect() as conn:
+            # Check and add columns to attendance_records
+            for col_name, col_type in [
+                ("latitude", "FLOAT"),
+                ("longitude", "FLOAT"),
+                ("distance_meters", "FLOAT")
+            ]:
+                try:
+                    conn.execute(text(f"ALTER TABLE attendance_records ADD COLUMN {col_name} {col_type}"))
+                    conn.commit()
+                except Exception:
+                    pass # Column already exists
+            
+            # Check and add columns to user_devices
+            for col_name, col_type in [
+                ("device_name", "VARCHAR"),
+                ("user_agent", "TEXT"),
+                ("ip_address", "VARCHAR"),
+                ("is_linked", "BOOLEAN DEFAULT 1"),
+                ("first_linked_at", "DATETIME"),
+                ("last_login_at", "DATETIME")
+            ]:
+                try:
+                    conn.execute(text(f"ALTER TABLE user_devices ADD COLUMN {col_name} {col_type}"))
+                    conn.commit()
+                except Exception:
+                    pass
+
+            # Check and add columns to users
+            for col_name, col_type in [
+                ("hashed_password", "VARCHAR"),
+                ("is_approved", "BOOLEAN DEFAULT 1")
+            ]:
+                try:
+                    conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
+                    conn.commit()
+                except Exception:
+                    pass
+
+            # Check and add columns to allowed_emails
+            for col_name, col_type in [
+                ("admin_id", "INTEGER")
+            ]:
+                try:
+                    conn.execute(text(f"ALTER TABLE allowed_emails ADD COLUMN {col_name} {col_type}"))
+                    conn.commit()
+                except Exception:
+                    pass
+
+            # Purge any legacy attendance records belonging to Admin accounts
             try:
-                conn.execute(text(f"ALTER TABLE attendance_records ADD COLUMN {col_name} {col_type}"))
-                conn.commit()
-            except Exception:
-                pass # Column already exists
-        
-        # Check and add columns to user_devices
-        for col_name, col_type in [
-            ("device_name", "VARCHAR"),
-            ("user_agent", "TEXT"),
-            ("ip_address", "VARCHAR"),
-            ("is_linked", "BOOLEAN DEFAULT 1"),
-            ("first_linked_at", "DATETIME"),
-            ("last_login_at", "DATETIME")
-        ]:
-            try:
-                conn.execute(text(f"ALTER TABLE user_devices ADD COLUMN {col_name} {col_type}"))
+                conn.execute(text("DELETE FROM attendance_records WHERE user_id IN (SELECT id FROM users WHERE role = 'ADMIN')"))
+                conn.execute(text("DELETE FROM allowed_emails WHERE lower(email) IN (SELECT lower(email) FROM users WHERE role = 'ADMIN')"))
+                initial_admin = os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower()
+                if initial_admin:
+                    conn.execute(text(f"DELETE FROM allowed_emails WHERE lower(email) = '{initial_admin}'"))
                 conn.commit()
             except Exception:
                 pass
-
-        # Check and add columns to users
-        for col_name, col_type in [
-            ("hashed_password", "VARCHAR"),
-            ("is_approved", "BOOLEAN DEFAULT 1")
-        ]:
-            try:
-                conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
-                conn.commit()
-            except Exception:
-                pass
-
-        # Check and add columns to allowed_emails
-        for col_name, col_type in [
-            ("admin_id", "INTEGER")
-        ]:
-            try:
-                conn.execute(text(f"ALTER TABLE allowed_emails ADD COLUMN {col_name} {col_type}"))
-                conn.commit()
-            except Exception:
-                pass
-
-        # Purge any legacy attendance records belonging to Admin accounts
-        try:
-            conn.execute(text("DELETE FROM attendance_records WHERE user_id IN (SELECT id FROM users WHERE role = 'ADMIN')"))
-            conn.execute(text("DELETE FROM allowed_emails WHERE lower(email) IN (SELECT lower(email) FROM users WHERE role = 'ADMIN')"))
-            initial_admin = os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower()
-            if initial_admin:
-                conn.execute(text(f"DELETE FROM allowed_emails WHERE lower(email) = '{initial_admin}'"))
-            conn.commit()
-        except Exception:
-            pass
-
-migrate_db()
+    except Exception as e:
+        print("[MIGRATION WARNING]:", e)
 
 def seed_initial_admin():
     """Ensure master administrator user account exists with designated master password."""
@@ -121,9 +119,21 @@ def seed_initial_admin():
         finally:
             db.close()
 
-seed_initial_admin()
+def init_db_safely():
+    try:
+        Base.metadata.create_all(bind=engine)
+        migrate_db()
+        seed_initial_admin()
+    except Exception as e:
+        print("[DB BOOTSTRAP WARNING]:", e)
+
+init_db_safely()
 
 app = FastAPI(title="OTP Attendance API")
+
+@app.on_event("startup")
+def on_startup():
+    init_db_safely()
 
 # Configure CORS
 app.add_middleware(
