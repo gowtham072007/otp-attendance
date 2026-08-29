@@ -413,7 +413,7 @@ def get_my_history(db: Session = Depends(get_db), current_user: User = Depends(g
     for r in records:
         result.append({
             "date": format_ist_date(r.timestamp),
-            "session": f"Session {r.session_id:02d}",
+            "session": f"Session {int(r.session_id):02d}",
             "time": format_ist_time(r.timestamp),
             "status": r.status
         })
