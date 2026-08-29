@@ -1,14 +1,10 @@
 fastapi
 uvicorn
 sqlalchemy
-psycopg2-binary
+pg8000
 python-dotenv
 python-jose[cryptography]
 passlib[bcrypt]
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
 httpx
 pydantic
 pydantic-settings
-alembic

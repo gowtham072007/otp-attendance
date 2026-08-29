@@ -63,6 +63,21 @@ const Login = () => {
     setSuccessMsg(null);
   };
 
+  const getErrorMessage = (err, defaultMsg) => {
+    if (err.response?.data?.detail) {
+      if (typeof err.response.data.detail === 'string') {
+        return err.response.data.detail;
+      }
+      if (Array.isArray(err.response.data.detail)) {
+        return err.response.data.detail.map(d => d.msg || JSON.stringify(d)).join(', ');
+      }
+    }
+    if (err.code === 'ERR_NETWORK' || !err.response) {
+      return "Unable to connect to the backend server. Please ensure the backend API is running on port 8000.";
+    }
+    return defaultMsg;
+  };
+
   // Student Login Submit
   const handleStudentSubmit = async (e) => {
     e.preventDefault();
@@ -76,7 +91,7 @@ const Login = () => {
     try {
       await login(studentForm.email.trim(), studentForm.name.trim());
     } catch (err) {
-      setError(err.response?.data?.detail || "Authentication failed. Please check your registered email or contact Admin.");
+      setError(getErrorMessage(err, "Authentication failed. Please check your registered email or contact Admin."));
       setLoading(false);
     }
   };
@@ -94,7 +109,7 @@ const Login = () => {
     try {
       await adminLogin(adminForm.email.trim(), adminForm.password);
     } catch (err) {
-      setError(err.response?.data?.detail || "Admin authentication failed. Please verify your email and password.");
+      setError(getErrorMessage(err, "Admin authentication failed. Please verify your email and password."));
       setLoading(false);
     }
   };
@@ -127,7 +142,7 @@ const Login = () => {
         setAdminForm({ email: adminForm.email.trim(), password: '', fullName: '' });
       }
     } catch (err) {
-      setError(err.response?.data?.detail || "Admin account creation failed. Please try again.");
+      setError(getErrorMessage(err, "Admin account creation failed. Please try again."));
     } finally {
       setLoading(false);
     }

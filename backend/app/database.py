@@ -16,7 +16,9 @@ if not raw_db_url or raw_db_url.startswith("sqlite"):
         SQLALCHEMY_DATABASE_URL = "sqlite:///./attendance.db"
 else:
     if raw_db_url.startswith("postgres://"):
-        raw_db_url = raw_db_url.replace("postgres://", "postgresql://", 1)
+        raw_db_url = raw_db_url.replace("postgres://", "postgresql+pg8000://", 1)
+    elif raw_db_url.startswith("postgresql://") and not any(d in raw_db_url for d in ["+pg8000", "+psycopg", "+asyncpg"]):
+        raw_db_url = raw_db_url.replace("postgresql://", "postgresql+pg8000://", 1)
     SQLALCHEMY_DATABASE_URL = raw_db_url
 
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
