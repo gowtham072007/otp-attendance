@@ -106,7 +106,7 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
     
     master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
     master_admin_id = master_admin.id if master_admin else None
-    is_requester_master = bool(admin_id is None or (master_admin_id is not None and admin_id == master_admin_id))
+    is_requester_master = admin_id is None or (master_admin_id is not None and admin_id == master_admin_id)
 
     if session_id:
         query = db.query(AttendanceSession).filter(AttendanceSession.id == session_id)
@@ -193,17 +193,16 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
             "user_id": user_id
         }
         
-    # If Master Admin is viewing, also include any student who attended
-    if is_requester_master:
-        for r in attendance_records:
-            if r.user and r.user.role == "USER":
-                clean_email = r.user.email.lower().strip()
-                if clean_email not in admin_emails and clean_email not in roster:
-                    roster[clean_email] = {
-                        "email": r.user.email,
-                        "name": r.user.full_name,
-                        "user_id": r.user.id
-                    }
+    # Include any student who attended or was marked present in this session
+    for r in attendance_records:
+        if r.user and r.user.role == "USER":
+            clean_email = r.user.email.lower().strip()
+            if clean_email not in admin_emails and clean_email not in roster:
+                roster[clean_email] = {
+                    "email": r.user.email,
+                    "name": r.user.full_name or clean_email.split("@")[0].replace(".", " ").title(),
+                    "user_id": r.user.id
+                }
 
     # Get all active linked devices
     devices = db.query(UserDevice).filter(UserDevice.is_linked == True).all()
@@ -640,11 +639,14 @@ def delete_session(session_id: int, db: Session = Depends(get_db), admin: User =
 
 @router.delete("/attendance/record/{record_id}")
 def delete_single_attendance_record(record_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
+    master_admin_id = master_admin.id if master_admin else None
+
     query = db.query(AttendanceRecord).join(AttendanceSession, AttendanceRecord.session_id == AttendanceSession.id).filter(
         AttendanceRecord.id == record_id
     )
     if not is_master_admin(admin):
-        query = query.filter(AttendanceSession.admin_id == admin.id)
+        query = query.filter((AttendanceSession.admin_id == admin.id) | (AttendanceSession.admin_id == master_admin_id))
 
     record = query.first()
     if not record:
@@ -660,26 +662,55 @@ def manual_mark_attendance(payload: ManualAttendanceRequest, db: Session = Depen
     if not clean_email or "@" not in clean_email or "." not in clean_email:
         raise HTTPException(status_code=400, detail="A valid student email address is required.")
     
+    master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
+    master_admin_id = master_admin.id if master_admin else None
+    is_master = is_master_admin(admin)
+
     # 1. Determine Target Session for this Admin
+    target_session = None
     if payload.session_id:
-        target_session = db.query(AttendanceSession).filter(
-            AttendanceSession.id == payload.session_id,
-            AttendanceSession.admin_id == admin.id
-        ).first()
-    else:
-        target_session = db.query(AttendanceSession).filter(
-            AttendanceSession.admin_id == admin.id,
-            AttendanceSession.status == "ACTIVE"
-        ).first()
-        if not target_session:
-            target_session = get_today_session(db, admin_id=admin.id)
-        if not target_session:
+        if is_master:
+            target_session = db.query(AttendanceSession).filter(AttendanceSession.id == payload.session_id).first()
+        else:
             target_session = db.query(AttendanceSession).filter(
-                AttendanceSession.admin_id == admin.id
-            ).order_by(AttendanceSession.id.desc()).first()
+                AttendanceSession.id == payload.session_id,
+                (AttendanceSession.admin_id == admin.id) | (AttendanceSession.admin_id == master_admin_id)
+            ).first()
+    else:
+        if is_master:
+            target_session = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE").order_by(AttendanceSession.id.desc()).first()
+            if not target_session:
+                target_session = get_today_session(db)
+            if not target_session:
+                target_session = db.query(AttendanceSession).order_by(AttendanceSession.id.desc()).first()
+        else:
+            # 1. First priority: This admin's own active session
+            target_session = db.query(AttendanceSession).filter(
+                AttendanceSession.admin_id == admin.id,
+                AttendanceSession.status == "ACTIVE"
+            ).first()
+            # 2. Second priority: This admin's session created today
+            if not target_session:
+                target_session = get_today_session(db, admin_id=admin.id)
+            # 3. Third priority: Master Admin's active session
+            if not target_session and master_admin_id:
+                target_session = db.query(AttendanceSession).filter(
+                    AttendanceSession.admin_id == master_admin_id,
+                    AttendanceSession.status == "ACTIVE"
+                ).first()
+            # 4. Fourth priority: This admin's most recent session
+            if not target_session:
+                target_session = db.query(AttendanceSession).filter(
+                    AttendanceSession.admin_id == admin.id
+                ).order_by(AttendanceSession.id.desc()).first()
+            # 5. Fifth priority: Master admin's most recent session
+            if not target_session and master_admin_id:
+                target_session = db.query(AttendanceSession).filter(
+                    AttendanceSession.admin_id == master_admin_id
+                ).order_by(AttendanceSession.id.desc()).first()
             
     if not target_session:
-        raise HTTPException(status_code=400, detail="No attendance session found for your administrator account. Please start or create a session first.")
+        raise HTTPException(status_code=400, detail="No attendance session found. Please start or select an attendance session first.")
     
     # 2. Find or Provision the Student User
     user = db.query(User).filter(User.email.ilike(clean_email)).first()
@@ -689,10 +720,15 @@ def manual_mark_attendance(payload: ManualAttendanceRequest, db: Session = Depen
             detail="Cannot mark attendance for an Administrator. Attendance records are strictly for students only."
         )
 
+    # Check AllowedEmail for display name
+    allowed = db.query(AllowedEmail).filter(
+        func.lower(AllowedEmail.email) == clean_email,
+        (AllowedEmail.admin_id == admin.id) | (AllowedEmail.admin_id.is_(None)) | (AllowedEmail.admin_id == master_admin_id)
+    ).first()
+    
+    full_name = payload.name.strip() if (payload.name and payload.name.strip()) else (allowed.name if (allowed and allowed.name) else clean_email.split("@")[0].replace(".", " ").title())
+
     if not user:
-        # Check AllowedEmail for display name or use payload.name or fallback to email username
-        allowed = db.query(AllowedEmail).filter(AllowedEmail.email.ilike(clean_email)).first()
-        full_name = payload.name.strip() if payload.name else (allowed.name if allowed and allowed.name else clean_email.split("@")[0].replace(".", " ").title())
         import uuid
         user = User(
             email=clean_email,
@@ -703,6 +739,23 @@ def manual_mark_attendance(payload: ManualAttendanceRequest, db: Session = Depen
         db.add(user)
         db.commit()
         db.refresh(user)
+    elif payload.name and payload.name.strip() and user.full_name != payload.name.strip():
+        user.full_name = payload.name.strip()
+        db.commit()
+
+    # Automatically ensure student is present in this admin's whitelist so they appear in reports and future sessions
+    existing_allowed = db.query(AllowedEmail).filter(
+        AllowedEmail.admin_id == admin.id,
+        func.lower(AllowedEmail.email) == clean_email
+    ).first()
+    if not existing_allowed and not is_master:
+        new_allowed = AllowedEmail(
+            admin_id=admin.id,
+            email=clean_email,
+            name=user.full_name
+        )
+        db.add(new_allowed)
+        db.commit()
 
     # 3. Create or Update AttendanceRecord
     existing_record = db.query(AttendanceRecord).filter(
@@ -739,6 +792,7 @@ def manual_mark_attendance(payload: ManualAttendanceRequest, db: Session = Depen
         "date": format_ist_date(rec.timestamp),
         "time": format_ist_time(rec.timestamp)
     }
+
 
 @router.get("/allowed-emails", response_model=List[AllowedEmailResponse])
 def get_allowed_emails(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):

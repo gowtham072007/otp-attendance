@@ -4,6 +4,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
+# Load .env from backend directory and current working directory
+backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(backend_dir, ".env"))
 load_dotenv()
 
 # We expect a Postgres URL. If none provided, we fallback to SQLite for local quick dev or Vercel /tmp storage.
