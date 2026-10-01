@@ -1,0 +1,43 @@
+name: Supabase Keep-Alive
+
+on:
+  schedule:
+    # Runs every 3 days at 00:00 UTC (well within the 7-day inactivity limit)
+    - cron: '0 0 */3 * *'
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions tab anytime
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase Database & REST API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://efszhpwistuytcutzbgs.supabase.co' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Starting Supabase Keep-Alive check..."
+
+          # 1. Direct PostgreSQL query if DATABASE_URL secret is provided
+          if [ -n "$DATABASE_URL" ]; then
+            echo "Executing direct Postgres query via psql..."
+            psql "$DATABASE_URL" -c "SELECT 1;" && echo "PostgreSQL query successful!" || echo "::warning ::Direct Postgres query failed."
+          fi
+
+          # 2. REST API ping
+          if [ -n "$SUPABASE_ANON_KEY" ]; then
+            echo "Pinging Supabase REST API..."
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X GET "${SUPABASE_URL}/rest/v1/" \
+              -H "apikey: ${SUPABASE_ANON_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+            echo "REST API HTTP Status: $HTTP_STATUS"
+            if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 400 ]; then
+              echo "Keep-alive REST ping successful!"
+            else
+              echo "::warning ::REST ping returned status $HTTP_STATUS. Please verify SUPABASE_ANON_KEY."
+            fi
+          elif [ -z "$DATABASE_URL" ]; then
+            echo "::warning ::Neither DATABASE_URL nor SUPABASE_ANON_KEY secret was found."
+            echo "Sending fallback GET request to REST endpoint..."
+            curl -i -s -X GET "${SUPABASE_URL}/rest/v1/" || true
+          fi
