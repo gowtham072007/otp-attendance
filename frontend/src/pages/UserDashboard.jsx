@@ -373,8 +373,13 @@ const UserDashboard = () => {
             <img src="/logo.png" alt="Attendance Logo" className="w-full h-full object-contain rounded-lg" />
           </div>
           <div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center flex-wrap gap-1.5">
               <h1 className="text-base font-black text-black dark:text-white tracking-tight">Hello, {user.full_name}</h1>
+              {user.register_number && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                  {user.register_number}
+                </span>
+              )}
               {user.device && (
                 <span className="hidden sm:inline-flex items-center space-x-1 px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800/90 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-[10px] font-mono rounded-md shadow-2xs" title={`Bound device: ${user.device.device_name}`}>
                   <Smartphone size={11} className="text-zinc-500" />
@@ -382,7 +387,15 @@ const UserDashboard = () => {
                 </span>
               )}
             </div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">{user.email}</p>
+            <div className="flex items-center space-x-2 text-xs text-zinc-500 dark:text-zinc-400 font-mono mt-0.5">
+              <span>{user.email}</span>
+              {user.department && (
+                <span className="hidden sm:inline text-zinc-400">• {user.department}</span>
+              )}
+              {user.year && (
+                <span className="hidden sm:inline text-zinc-400">• {user.year}</span>
+              )}
+            </div>
           </div>
         </div>
 

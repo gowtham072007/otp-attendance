@@ -10,13 +10,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 try:
     from ..database import get_db
-    from ..models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, AllowedEmail
+    from ..models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, AllowedEmail, Student
     from ..schemas import AttendanceSubmission, AutoOTPRequest, AutoOTPResponse
     from ..auth.utils import get_current_user
     from ..utils.email_service import send_otp_email
 except (ImportError, ValueError):
     from app.database import get_db
-    from app.models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, AllowedEmail
+    from app.models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, AllowedEmail, Student
     from app.schemas import AttendanceSubmission, AutoOTPRequest, AutoOTPResponse
     from app.auth.utils import get_current_user
     from app.utils.email_service import send_otp_email
@@ -77,10 +77,18 @@ def get_active_session_for_student(db: Session, student_user: User) -> Optional[
     """
     clean_email = (student_user.email or "").strip().lower()
     allowed_entries = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == clean_email).all()
-    if not allowed_entries:
+    student_record = db.query(Student).filter(func.lower(Student.email) == clean_email).first()
+
+    if not allowed_entries and not student_record:
+        return None
+
+    if student_record and (student_record.status or "").strip().lower() != "active":
         return None
 
     authorized_admin_ids = {a.admin_id for a in allowed_entries if a.admin_id is not None}
+    if student_record and student_record.admin_id:
+        authorized_admin_ids.add(student_record.admin_id)
+
     has_unscoped_whitelist = any(a.admin_id is None for a in allowed_entries)
 
     master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()

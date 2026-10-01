@@ -1,17 +1,18 @@
 import os
 import uuid
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timezone, timedelta
 try:
     from ..database import get_db
-    from ..models import User, AllowedEmail, UserDevice
+    from ..models import User, AllowedEmail, UserDevice, Student
     from ..schemas import DirectLoginRequest, AdminLoginRequest, AdminRegisterRequest, Token, UserResponse, AdminRegisterResponse
     from ..auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES, hash_password, verify_password
 except (ImportError, ValueError):
     from app.database import get_db
-    from app.models import User, AllowedEmail, UserDevice
+    from app.models import User, AllowedEmail, UserDevice, Student
     from app.schemas import DirectLoginRequest, AdminLoginRequest, AdminRegisterRequest, Token, UserResponse, AdminRegisterResponse
     from app.auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES, hash_password, verify_password
 
@@ -36,13 +37,29 @@ def direct_login(request: DirectLoginRequest, db: Session = Depends(get_db)):
         is_admin = is_initial_admin or (user is not None and user.role == "ADMIN")
 
         if not is_admin:
-            # Check if email is in allowed_emails whitelist
-            allowed = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == email).first()
-            if not allowed:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access Denied: Your email ID is not authorized. Please contact the Admin to register your email."
-                )
+            # 1. Primary Check: Verify email exists in Students table
+            student_record = db.query(Student).filter(func.lower(Student.email) == email).first()
+            if student_record:
+                # 2. Check if student status is Active
+                student_status = (student_record.status or "").strip().lower()
+                if student_status != "active":
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Access Denied: Your student account is currently Inactive. Please contact your Admin to activate your account."
+                    )
+                # Prioritize official enrolled name from Student directory
+                if student_record.name:
+                    full_name = student_record.name
+            else:
+                # Fallback check: AllowedEmail whitelist
+                allowed = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == email).first()
+                if not allowed:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access Denied: Your email ID is not registered in the student directory. Please contact your Department Admin to enroll."
+                    )
+                if allowed.name:
+                    full_name = allowed.name
 
         if not user:
             # Create user
@@ -134,7 +151,7 @@ def direct_login(request: DirectLoginRequest, db: Session = Depends(get_db)):
         return {
             "access_token": access_token, 
             "token_type": "bearer",
-            "user": user
+            "user": to_user_response(user, db)
         }
     except HTTPException:
         raise
@@ -143,10 +160,19 @@ def direct_login(request: DirectLoginRequest, db: Session = Depends(get_db)):
 
 
 
-def to_user_response(user: User) -> UserResponse:
+def to_user_response(user: User, db: Optional[Session] = None) -> UserResponse:
     is_master = bool(user.email and user.email.strip().lower() == INITIAL_ADMIN_EMAIL and user.role == "ADMIN")
     resp = UserResponse.model_validate(user)
     resp.is_master_admin = is_master
+
+    # Attach official student metadata if available
+    if db and user.role == "USER":
+        student = db.query(Student).filter(func.lower(Student.email) == user.email.strip().lower()).first()
+        if student:
+            resp.register_number = student.register_number
+            resp.department = student.department
+            resp.year = student.year
+            resp.student_status = student.status
     return resp
 
 @router.post("/admin/login", response_model=Token)
@@ -310,5 +336,5 @@ def admin_register(request: AdminRegisterRequest, db: Session = Depends(get_db))
 
 
 @router.get("/me", response_model=UserResponse)
-def get_me(current_user: User = Depends(get_current_user)):
-    return to_user_response(current_user)
+def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return to_user_response(current_user, db)

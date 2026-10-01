@@ -25,6 +25,10 @@ class UserResponse(UserBase):
     created_at: datetime
     is_master_admin: bool = False
     device: Optional[UserDeviceResponse] = None
+    register_number: Optional[str] = None
+    department: Optional[str] = None
+    year: Optional[str] = None
+    student_status: Optional[str] = None
     
     class Config:
         from_attributes = True
