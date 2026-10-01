@@ -38,10 +38,14 @@ else:
     SQLALCHEMY_DATABASE_URL = raw_db_url
 
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
+    print("[DATABASE WARNING] [WARN] DATABASE_URL is NOT set! Running on local SQLite fallback. On Render/Vercel, local container data is wiped on every deployment. To persist data permanently across deployments, set DATABASE_URL in your Render Environment Variables.")
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
     )
 else:
+    import re
+    safe_url = re.sub(r':([^:@]+)@', ':****@', SQLALCHEMY_DATABASE_URL)
+    print(f"[DATABASE] [OK] Persistent Supabase PostgreSQL connected: {safe_url}")
     engine = create_engine(SQLALCHEMY_DATABASE_URL)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
