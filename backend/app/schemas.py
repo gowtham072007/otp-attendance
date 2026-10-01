@@ -167,3 +167,52 @@ class AdminRegisterResponse(BaseModel):
     access_token: Optional[str] = None
     token_type: Optional[str] = None
     user: Optional[UserResponse] = None
+
+# --- Student Management Schemas ---
+
+class StudentBase(BaseModel):
+    name: str
+    register_number: str
+    email: str
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    year: Optional[str] = None
+    status: Optional[str] = "Active"
+
+class StudentCreate(StudentBase):
+    pass
+
+class StudentUpdate(BaseModel):
+    name: Optional[str] = None
+    register_number: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    year: Optional[str] = None
+    status: Optional[str] = None
+
+class StudentResponse(BaseModel):
+    id: int
+    name: str
+    register_number: str
+    email: str
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    year: Optional[str] = None
+    status: str = "Active"
+    admin_id: int
+    admin_name: Optional[str] = None
+    admin_email: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class MasterAdminStudentStats(BaseModel):
+    total_students: int
+    active_students: int
+    inactive_students: int
+    departments_count: int
+    admins_count: int
+

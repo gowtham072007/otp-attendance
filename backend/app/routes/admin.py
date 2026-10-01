@@ -12,7 +12,7 @@ from sqlalchemy import func
 import os
 try:
     from ..database import get_db
-    from ..models import User, AttendanceSession, OTP, AttendanceRecord, AllowedEmail, UserDevice, GeofenceConfig
+    from ..models import User, AttendanceSession, OTP, AttendanceRecord, AllowedEmail, UserDevice, GeofenceConfig, Student
     from ..schemas import (
         OTPSessionResponse, 
         OTPResponse, 
@@ -28,7 +28,7 @@ try:
     from ..auth.utils import get_current_admin, hash_password
 except (ImportError, ValueError):
     from app.database import get_db
-    from app.models import User, AttendanceSession, OTP, AttendanceRecord, AllowedEmail, UserDevice, GeofenceConfig
+    from app.models import User, AttendanceSession, OTP, AttendanceRecord, AllowedEmail, UserDevice, GeofenceConfig, Student
     from app.schemas import (
         OTPSessionResponse, 
         OTPResponse, 
@@ -208,6 +208,10 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
     devices = db.query(UserDevice).filter(UserDevice.is_linked == True).all()
     device_by_user_id = {d.user_id: d for d in devices if d.user_id not in admin_ids}
 
+    # Fetch registered students metadata for official Register Number & Department
+    registered_students = db.query(Student).all()
+    student_meta_by_email = {s.email.lower().strip(): s for s in registered_students if s.email}
+
     records = []
     present_list = []
     absent_list = []
@@ -230,13 +234,24 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
             "last_login_at": f"{format_ist_date(user_dev.last_login_at)}, {format_ist_time_short(user_dev.last_login_at)}" if user_dev.last_login_at else "—"
         } if user_dev else None
 
+        # Resolve student metadata
+        meta = student_meta_by_email.get(email_key)
+        reg_number = meta.register_number if meta else None
+        department = meta.department if meta else None
+        year = meta.year if meta else None
+        display_name = meta.name if (meta and meta.name) else student["name"]
+
         if att_record:
             present_count += 1
             item = {
                 "record_id": att_record.id,
                 "user_id": user_id,
                 "session_id": target_session.id,
-                "name": student["name"],
+                "name": display_name,
+                "register_number": reg_number or "—",
+                "student_id": reg_number or "—",
+                "department": department or "—",
+                "year": year or "—",
                 "email": student["email"],
                 "date": format_ist_date(att_record.timestamp),
                 "time": format_ist_time(att_record.timestamp),
@@ -255,7 +270,11 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
                 "record_id": None,
                 "user_id": user_id,
                 "session_id": target_session.id,
-                "name": student["name"],
+                "name": display_name,
+                "register_number": reg_number or "—",
+                "student_id": reg_number or "—",
+                "department": department or "—",
+                "year": year or "—",
                 "email": student["email"],
                 "date": format_ist_date(target_session.created_at),
                 "time": "—",
@@ -565,39 +584,45 @@ def export_attendance(session_id: Optional[int] = None, db: Session = Depends(ge
     writer.writerow(["================================================================================"])
     writer.writerow([f"SECTION 1: PRESENT STUDENTS LIST ({len(present_list)} Students)"])
     writer.writerow(["================================================================================"])
-    writer.writerow(["S.No", "Student Name", "Email", "Date (IST)", "Check-in Time (IST)", "Attendance Status"])
+    writer.writerow(["S.No", "Student Name", "Register No", "Email", "Department", "Year", "Date (IST)", "Check-in Time (IST)", "Attendance Status"])
     
     if present_list:
         for idx, p in enumerate(present_list, 1):
             writer.writerow([
                 idx,
                 p.get("name", "Student"),
+                p.get("register_number", "—"),
                 p.get("email", ""),
+                p.get("department", "—"),
+                p.get("year", "—"),
                 p.get("date", session_date),
                 p.get("time", "—"),
                 "Present"
             ])
     else:
-        writer.writerow(["—", "No students marked present for this session", "", "", "", "—"])
+        writer.writerow(["—", "No students marked present for this session", "", "", "", "", "", "", "—"])
     writer.writerow([])
     
     # 4. Absent Students Section
     writer.writerow(["================================================================================"])
     writer.writerow([f"SECTION 2: ABSENT STUDENTS LIST ({len(absent_list)} Students)"])
     writer.writerow(["================================================================================"])
-    writer.writerow(["S.No", "Student Name", "Email", "Date (IST)", "Attendance Status"])
+    writer.writerow(["S.No", "Student Name", "Register No", "Email", "Department", "Year", "Date (IST)", "Attendance Status"])
     
     if absent_list:
         for idx, a in enumerate(absent_list, 1):
             writer.writerow([
                 idx,
                 a.get("name", "Student"),
+                a.get("register_number", "—"),
                 a.get("email", ""),
+                a.get("department", "—"),
+                a.get("year", "—"),
                 a.get("date", session_date),
                 "Absent"
             ])
     else:
-        writer.writerow(["—", "No absent students (100% Attendance Achieved)", "", "", "—"])
+        writer.writerow(["—", "No absent students (100% Attendance Achieved)", "", "", "", "", "", "—"])
     
     output.seek(0)
     current_ist = datetime.now(IST).strftime('%d-%m-%Y_%I-%M%p')

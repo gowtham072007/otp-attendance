@@ -19,6 +19,7 @@ class User(Base):
 
     # Strict 1 User per Device relationship
     device = relationship("UserDevice", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    students = relationship("Student", back_populates="admin", cascade="all, delete-orphan")
 
 class UserDevice(Base):
     __tablename__ = "user_devices"
@@ -102,5 +103,26 @@ class GeofenceConfig(Base):
     longitude: Any = Column(Float, default=77.723764)
     radius_meters: Any = Column(Float, default=500.0)
     updated_at: Any = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+class Student(Base):
+    __tablename__ = "students"
+
+    id: Any = Column(Integer, primary_key=True, index=True)
+    name: Any = Column(String, nullable=False)
+    register_number: Any = Column(String, unique=True, index=True, nullable=False)
+    email: Any = Column(String, index=True, nullable=False)
+    phone: Any = Column(String, nullable=True)
+    department: Any = Column(String, nullable=True)
+    year: Any = Column(String, nullable=True)
+    status: Any = Column(String, default="Active") # Active, Inactive
+    admin_id: Any = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at: Any = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Any = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    admin = relationship("User", back_populates="students")
+
+    __table_args__ = (
+        UniqueConstraint('register_number', name='_student_register_number_uc'),
+    )
 
 

@@ -5,12 +5,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 try:
     from .database import engine, Base, SessionLocal
-    from .models import User, AllowedEmail
-    from .routes import auth, admin, attendance
+    from .models import User, AllowedEmail, Student
+    from .routes import auth, admin, attendance, students
 except (ImportError, ValueError):
     from app.database import engine, Base, SessionLocal
-    from app.models import User, AllowedEmail
-    from app.routes import auth, admin, attendance
+    from app.models import User, AllowedEmail, Student
+    from app.routes import auth, admin, attendance, students
 
 def migrate_db():
     """Ensure newly added columns exist in existing database tables."""
@@ -147,6 +147,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(attendance.router, prefix="/api")
+app.include_router(students.router, prefix="/api")
 
 @app.get("/api/health")
 def health_check():

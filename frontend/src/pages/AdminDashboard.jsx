@@ -38,9 +38,11 @@ import {
   FileSpreadsheet,
   FileText,
   FileDown,
+  GraduationCap,
   X
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
+import StudentManagement from '../components/StudentManagement';
 
 const parseExpiryTime = (dateStr) => {
   if (!dateStr) return 0;
@@ -1001,6 +1003,17 @@ const AdminDashboard = () => {
             <span>Attendance & Sessions</span>
           </button>
           <button
+            onClick={() => setActiveTab('students')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'students'
+                ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm'
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
+            }`}
+          >
+            <GraduationCap size={15} className="text-emerald-500" />
+            <span>Students</span>
+          </button>
+          <button
             onClick={() => setActiveTab('whitelist')}
             className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'whitelist'
@@ -1058,7 +1071,7 @@ const AdminDashboard = () => {
       </nav>
 
       {/* Mobile Tab Switcher */}
-      <div className={`sm:hidden px-6 pt-4 grid ${isMasterAdmin ? 'grid-cols-4' : 'grid-cols-2'} gap-1.5`}>
+      <div className={`sm:hidden px-6 pt-4 grid ${isMasterAdmin ? 'grid-cols-5' : 'grid-cols-3'} gap-1.5`}>
         <button
           onClick={() => setActiveTab('session')}
           className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
@@ -1069,6 +1082,17 @@ const AdminDashboard = () => {
         >
           <Radio size={13} />
           <span>Sessions</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('students')}
+          className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
+            activeTab === 'students'
+              ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
+              : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
+          }`}
+        >
+          <GraduationCap size={13} className="text-emerald-500" />
+          <span>Students</span>
         </button>
         <button
           onClick={() => setActiveTab('whitelist')}
@@ -1674,8 +1698,20 @@ const AdminDashboard = () => {
                             }`}
                           >
                             <td className="p-4 pl-6">
-                              <div className="font-bold text-zinc-900 dark:text-zinc-100">{record.name}</div>
-                              <div className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">{record.email}</div>
+                              <div className="flex items-center space-x-2">
+                                <span className="font-bold text-zinc-900 dark:text-zinc-100">{record.name}</span>
+                                {record.register_number && record.register_number !== '—' && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    {record.register_number}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-zinc-500 dark:text-zinc-400 font-mono flex items-center space-x-2 mt-0.5">
+                                <span>{record.email}</span>
+                                {record.department && record.department !== '—' && (
+                                  <span className="text-[10px] text-zinc-400">• {record.department}</span>
+                                )}
+                              </div>
                             </td>
                             <td className="p-4 text-xs text-zinc-600 dark:text-zinc-400 font-mono">{record.date}</td>
                             <td className="p-4 text-xs font-mono">
@@ -1758,7 +1794,12 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* TAB 2: Authorized Student Email Whitelist */}
+        {/* TAB 2: Students Directory & Management */}
+        {activeTab === 'students' && (
+          <StudentManagement isMasterAdmin={isMasterAdmin} currentUser={user} />
+        )}
+
+        {/* TAB 3: Authorized Student Email Whitelist */}
         {activeTab === 'whitelist' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             
