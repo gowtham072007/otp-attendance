@@ -8,3 +8,5 @@ passlib[bcrypt]
 httpx
 pydantic
 pydantic-settings
+openpyxl
+python-multipart

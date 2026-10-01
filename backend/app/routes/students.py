@@ -1,8 +1,12 @@
 import os
 import re
+import io
+import csv
+import openpyxl
 from typing import List, Optional, Any
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 
@@ -13,7 +17,10 @@ try:
         StudentCreate, 
         StudentUpdate, 
         StudentResponse, 
-        MasterAdminStudentStats
+        MasterAdminStudentStats,
+        StudentBulkImportItem,
+        StudentBulkImportRequest,
+        StudentBulkImportResponse
     )
     from ..auth.utils import get_current_admin
 except (ImportError, ValueError):
@@ -23,7 +30,10 @@ except (ImportError, ValueError):
         StudentCreate, 
         StudentUpdate, 
         StudentResponse, 
-        MasterAdminStudentStats
+        MasterAdminStudentStats,
+        StudentBulkImportItem,
+        StudentBulkImportRequest,
+        StudentBulkImportResponse
     )
     from app.auth.utils import get_current_admin
 
@@ -345,6 +355,359 @@ def delete_student(
         "message": f"Student '{student_name}' ({student_reg}) has been successfully deleted.",
         "deleted_id": student_id
     }
+
+
+def map_row_dict_to_student(row_dict: dict) -> dict:
+    def get_val(matcher) -> Optional[str]:
+        for k, v in row_dict.items():
+            if v is None:
+                continue
+            v_str = str(v).strip()
+            if not v_str:
+                continue
+            k_clean = "".join(c for c in str(k).lower() if c.isalnum())
+            if matcher(k_clean):
+                return v_str
+        return None
+
+    name = get_val(lambda k: any(x in k for x in ["studentname", "fullname", "name"]) and not any(x in k for x in ["dept", "admin", "class", "year"]))
+    register_number = get_val(lambda k: any(x in k for x in ["regno", "regnumber", "registerno", "registernumber", "reg", "rollno", "rollnumber", "roll", "studentid", "studentreg"]))
+    if not register_number:
+        register_number = get_val(lambda k: k == "id" or k.endswith("id"))
+    email = get_val(lambda k: "email" in k or "mail" in k)
+    phone = get_val(lambda k: any(x in k for x in ["phone", "mobile", "contact", "cell"]))
+    department = get_val(lambda k: any(x in k for x in ["dept", "department", "branch", "degree"]))
+    year = get_val(lambda k: any(x in k for x in ["year", "class", "batch", "sem", "semester"]))
+    status_val = get_val(lambda k: "status" in k)
+
+    return {
+        "name": name,
+        "register_number": register_number,
+        "email": email,
+        "phone": phone,
+        "department": department,
+        "year": year,
+        "status": status_val or "Active"
+    }
+
+
+def parse_excel_or_csv_file(file_bytes: bytes, filename: str) -> List[dict]:
+    filename_lower = filename.lower()
+    records = []
+
+    if filename_lower.endswith(".csv"):
+        text = None
+        for enc in ("utf-8-sig", "utf-8", "latin1"):
+            try:
+                text = file_bytes.decode(enc)
+                break
+            except Exception:
+                continue
+        if text is None:
+            text = file_bytes.decode("utf-8", errors="ignore")
+        
+        reader = csv.reader(io.StringIO(text))
+        rows = list(reader)
+        if not rows:
+            return []
+        header = [str(c).strip().lower() for c in rows[0]]
+        for row in rows[1:]:
+            if not any(str(c).strip() for c in row):
+                continue
+            row_dict = {}
+            for idx, col_name in enumerate(header):
+                if idx < len(row):
+                    row_dict[col_name] = str(row[idx]).strip()
+            records.append(map_row_dict_to_student(row_dict))
+    else:
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+        sheet = wb.active
+        rows = list(sheet.iter_rows(values_only=True))
+        if not rows:
+            return []
+        header = [str(c).strip().lower() if c is not None else "" for c in rows[0]]
+        for row in rows[1:]:
+            if not any(c is not None and str(c).strip() for c in row):
+                continue
+            row_dict = {}
+            for idx, col_name in enumerate(header):
+                if idx < len(row) and col_name:
+                    val = row[idx]
+                    row_dict[col_name] = str(val).strip() if val is not None else ""
+            records.append(map_row_dict_to_student(row_dict))
+
+    return records
+
+
+def process_bulk_students(
+    student_items: List[dict],
+    admin: User,
+    db: Session
+) -> StudentBulkImportResponse:
+    added_students = []
+    errors = []
+    skipped_count = 0
+    added_count = 0
+
+    admin_emails = {
+        u[0].strip().lower() 
+        for u in db.query(User.email).filter(User.role == "ADMIN", User.email.isnot(None)).all()
+    }
+    if INITIAL_ADMIN_EMAIL:
+        admin_emails.add(INITIAL_ADMIN_EMAIL)
+
+    existing_reg_nos = {
+        r[0].strip().upper() 
+        for r in db.query(Student.register_number).filter(Student.register_number.isnot(None)).all()
+    }
+    existing_emails = {
+        e[0].strip().lower() 
+        for e in db.query(Student.email).filter(Student.email.isnot(None)).all()
+    }
+
+    batch_reg_nos = set()
+    batch_emails = set()
+
+    to_add = []
+    now_utc = datetime.now(timezone.utc)
+
+    for idx, item in enumerate(student_items, start=1):
+        raw_name = str(item.get("name") or "").strip()
+        raw_reg = str(item.get("register_number") or "").strip().upper()
+        raw_email = str(item.get("email") or "").strip().lower()
+        raw_phone = str(item.get("phone") or "").strip() or None
+        raw_dept = str(item.get("department") or "").strip() or None
+        raw_year = str(item.get("year") or "").strip() or None
+        raw_status = str(item.get("status") or "Active").strip().capitalize()
+        if raw_status not in ("Active", "Inactive"):
+            raw_status = "Active"
+
+        row_desc = f"Row {idx} ({raw_name or 'Unknown'} / {raw_reg or 'No ID'})"
+
+        if not raw_name:
+            errors.append(f"{row_desc}: Student Name is missing.")
+            skipped_count += 1
+            continue
+
+        if not raw_reg:
+            errors.append(f"{row_desc}: Student ID / Register Number is missing.")
+            skipped_count += 1
+            continue
+
+        if not raw_email or "@" not in raw_email or "." not in raw_email:
+            errors.append(f"{row_desc}: Invalid email address '{raw_email}'.")
+            skipped_count += 1
+            continue
+
+        if raw_email in admin_emails:
+            errors.append(f"{row_desc}: Email '{raw_email}' belongs to an Administrator account.")
+            skipped_count += 1
+            continue
+
+        if raw_reg in existing_reg_nos:
+            errors.append(f"{row_desc}: Student ID '{raw_reg}' already registered in database.")
+            skipped_count += 1
+            continue
+
+        if raw_email in existing_emails:
+            errors.append(f"{row_desc}: Email '{raw_email}' already registered in database.")
+            skipped_count += 1
+            continue
+
+        if raw_reg in batch_reg_nos:
+            errors.append(f"{row_desc}: Duplicate Student ID '{raw_reg}' inside this file.")
+            skipped_count += 1
+            continue
+
+        if raw_email in batch_emails:
+            errors.append(f"{row_desc}: Duplicate email '{raw_email}' inside this file.")
+            skipped_count += 1
+            continue
+
+        batch_reg_nos.add(raw_reg)
+        batch_emails.add(raw_email)
+
+        new_student = Student(
+            name=raw_name,
+            register_number=raw_reg,
+            email=raw_email,
+            phone=raw_phone,
+            department=raw_dept,
+            year=raw_year,
+            status=raw_status,
+            admin_id=admin.id,
+            created_at=now_utc,
+            updated_at=now_utc
+        )
+        to_add.append(new_student)
+        existing_reg_nos.add(raw_reg)
+        existing_emails.add(raw_email)
+
+    if to_add:
+        db.add_all(to_add)
+        db.commit()
+        for s in to_add:
+            db.refresh(s)
+            added_students.append(build_student_response(s, db))
+        added_count = len(to_add)
+
+    return StudentBulkImportResponse(
+        total_received=len(student_items),
+        added_count=added_count,
+        skipped_count=skipped_count,
+        added_students=added_students,
+        errors=errors
+    )
+
+
+@router.post("/students/bulk", response_model=StudentBulkImportResponse)
+def bulk_import_students(
+    payload: StudentBulkImportRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Bulk import students from a list of records.
+    Validates each student, ignores/reports errors, and persists valid records.
+    """
+    items = [item.model_dump() for item in payload.students]
+    return process_bulk_students(items, admin, db)
+
+
+@router.post("/students/upload-excel", response_model=StudentBulkImportResponse)
+async def upload_excel_students(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Upload an Excel (.xlsx, .xls) or CSV spreadsheet file containing student records.
+    Automatically parses columns, validates entries, and inserts new students.
+    """
+    filename = file.filename or "students.xlsx"
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+
+    try:
+        items = parse_excel_or_csv_file(contents, filename)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse spreadsheet file: {str(e)}")
+
+    if not items:
+        raise HTTPException(status_code=400, detail="No data rows found in the uploaded file.")
+
+    return process_bulk_students(items, admin, db)
+
+
+@router.get("/students/template/excel")
+def download_excel_template():
+    """
+    Download a formatted Excel (.xlsx) template for bulk student upload.
+    """
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Students Template"
+
+    headers = [
+        "Student Name", 
+        "Student ID / Register No", 
+        "Email", 
+        "Phone Number", 
+        "Department", 
+        "Year / Class", 
+        "Status"
+    ]
+    ws.append(headers)
+
+    ws.append([
+        "Gowthama Lakshmana Krishna A",
+        "95072517036",
+        "gowthamaa.ug.25.ad@francisxavier.ac.in",
+        "9876543210",
+        "Artificial Intelligence & Data Science (AIDS)",
+        "2nd Year (II)",
+        "Active"
+    ])
+    ws.append([
+        "Alex Johnson",
+        "95072517037",
+        "alex.johnson@francisxavier.ac.in",
+        "9876543211",
+        "Computer Science & Engineering (CSE)",
+        "1st Year (I)",
+        "Active"
+    ])
+
+    header_fill = openpyxl.styles.PatternFill(start_color="059669", end_color="059669", fill_type="solid")
+    header_font = openpyxl.styles.Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    
+    for col_num in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col_num)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = openpyxl.styles.Alignment(horizontal="center", vertical="center")
+
+    col_widths = [32, 26, 36, 18, 42, 18, 14]
+    for col_idx, width in enumerate(col_widths, 1):
+        col_letter = openpyxl.utils.get_column_letter(col_idx)
+        ws.column_dimensions[col_letter].width = width
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    resp_headers = {
+        "Content-Disposition": "attachment; filename=students_import_template.xlsx"
+    }
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=resp_headers
+    )
+
+
+@router.get("/students/template/csv")
+def download_csv_template():
+    """
+    Download a sample CSV template for bulk student upload.
+    """
+    output = io.StringIO()
+    output.write("\ufeff")
+    writer = csv.writer(output)
+    writer.writerow([
+        "Student Name", 
+        "Student ID / Register No", 
+        "Email", 
+        "Phone Number", 
+        "Department", 
+        "Year / Class", 
+        "Status"
+    ])
+    writer.writerow([
+        "Gowthama Lakshmana Krishna A",
+        "95072517036",
+        "gowthamaa.ug.25.ad@francisxavier.ac.in",
+        "9876543210",
+        "Artificial Intelligence & Data Science (AIDS)",
+        "2nd Year (II)",
+        "Active"
+    ])
+    writer.writerow([
+        "Alex Johnson",
+        "95072517037",
+        "alex.johnson@francisxavier.ac.in",
+        "9876543211",
+        "Computer Science & Engineering (CSE)",
+        "1st Year (I)",
+        "Active"
+    ])
+    
+    content = output.getvalue()
+    resp_headers = {
+        "Content-Disposition": "attachment; filename=students_import_template.csv"
+    }
+    return Response(content=content, media_type="text/csv", headers=resp_headers)
 
 
 # --- 2. Master Admin Global Student List Routes ---

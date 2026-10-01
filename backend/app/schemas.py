@@ -199,3 +199,22 @@ class MasterAdminStudentStats(BaseModel):
     departments_count: int
     admins_count: int
 
+class StudentBulkImportItem(BaseModel):
+    name: str
+    register_number: str
+    email: str
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    year: Optional[str] = None
+    status: Optional[str] = "Active"
+
+class StudentBulkImportRequest(BaseModel):
+    students: List[StudentBulkImportItem]
+
+class StudentBulkImportResponse(BaseModel):
+    total_received: int
+    added_count: int
+    skipped_count: int
+    added_students: List[StudentResponse] = []
+    errors: List[str] = []
+

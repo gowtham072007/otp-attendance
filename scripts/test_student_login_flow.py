@@ -1,13 +1,16 @@
 import sys
 import os
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 backend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend")
 sys.path.insert(0, backend_dir)
 
 from fastapi.testclient import TestClient
 from app.main import app
 from app.database import SessionLocal
-from app.models import User, Student
+from app.models import User, Student, AttendanceRecord
 from app.auth.utils import create_access_token
 
 client = TestClient(app)
@@ -56,6 +59,7 @@ for s in existing_s:
     db.delete(s)
 existing_u = db.query(User).filter(User.email == target_email).all()
 for u in existing_u:
+    db.query(AttendanceRecord).filter(AttendanceRecord.user_id == u.id).delete(synchronize_session=False)
     db.delete(u)
 db.commit()
 
