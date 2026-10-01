@@ -4,6 +4,9 @@ on:
   schedule:
     # Runs every 3 days at 00:00 UTC (well within the 7-day inactivity limit)
     - cron: '0 0 */3 * *'
+  push:
+    paths:
+      - '.github/workflows/keep-alive.yml'
   workflow_dispatch: # Allows manual trigger from the GitHub Actions tab anytime
 
 jobs:
