@@ -1,15 +1,15 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 try:
     from .database import engine, Base, SessionLocal
-    from .models import User, AllowedEmail, Student
+    from .models import User, Student
     from .routes import auth, admin, attendance, students
 except (ImportError, ValueError):
     from app.database import engine, Base, SessionLocal
-    from app.models import User, AllowedEmail, Student
+    from app.models import User, Student
     from app.routes import auth, admin, attendance, students
 
 def migrate_db():
@@ -55,23 +55,9 @@ def migrate_db():
                 except Exception:
                     pass
 
-            # Check and add columns to allowed_emails
-            for col_name, col_type in [
-                ("admin_id", "INTEGER")
-            ]:
-                try:
-                    conn.execute(text(f"ALTER TABLE allowed_emails ADD COLUMN {col_name} {col_type}"))
-                    conn.commit()
-                except Exception:
-                    pass
-
             # Purge any legacy attendance records belonging to Admin accounts
             try:
                 conn.execute(text("DELETE FROM attendance_records WHERE user_id IN (SELECT id FROM users WHERE role = 'ADMIN')"))
-                conn.execute(text("DELETE FROM allowed_emails WHERE lower(email) IN (SELECT lower(email) FROM users WHERE role = 'ADMIN')"))
-                initial_admin = os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower()
-                if initial_admin:
-                    conn.execute(text(f"DELETE FROM allowed_emails WHERE lower(email) = '{initial_admin}'"))
                 conn.commit()
             except Exception:
                 pass
@@ -208,7 +194,7 @@ if os.path.isdir(frontend_dist_path):
     def serve_frontend(catchall: str):
         # Prevent the catch-all from interfering with non-existent /api routes
         if catchall.startswith("api/"):
-            return {"detail": "Not Found"}
+            raise HTTPException(status_code=404, detail="Not Found")
         
         # Check if the requested file exists in dist (e.g. apple-touch-icon.png, logo-192.png)
         file_path = os.path.join(frontend_dist_path, catchall)

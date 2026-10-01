@@ -276,7 +276,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
 
   // Delete student
   const handleDeleteStudent = async (student) => {
-    const confirmMsg = `Are you sure you want to delete student:\n\n• Name: ${student.name}\n• ID / Register No: ${student.register_number}\n• Email: ${student.email}\n\nThis will remove the student from the database and whitelist.`;
+    const confirmMsg = `Are you sure you want to delete student:\n\n• Name: ${student.name}\n• ID / Register No: ${student.register_number}\n• Email: ${student.email}\n\nThis will remove the student record and login authorization from the database.`;
     if (!window.confirm(confirmMsg)) return;
 
     try {

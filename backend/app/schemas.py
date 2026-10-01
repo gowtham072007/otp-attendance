@@ -26,6 +26,8 @@ class UserResponse(UserBase):
     is_master_admin: bool = False
     device: Optional[UserDeviceResponse] = None
     register_number: Optional[str] = None
+    student_id: Optional[str] = None
+    studentId: Optional[str] = None
     department: Optional[str] = None
     year: Optional[str] = None
     student_status: Optional[str] = None
@@ -41,7 +43,7 @@ class Token(BaseModel):
 
 class DirectLoginRequest(BaseModel):
     email: str
-    full_name: str
+    full_name: Optional[str] = None
     device_id: Optional[str] = None
     device_name: Optional[str] = None
 
@@ -104,30 +106,6 @@ class GeofenceConfigUpdate(BaseModel):
     longitude: float
     radius_meters: float = 500.0
 
-class AllowedEmailCreate(BaseModel):
-    email: str
-    name: Optional[str] = None
-
-class AllowedEmailItem(BaseModel):
-    email: str
-    name: Optional[str] = None
-
-class AllowedEmailBulkCreate(BaseModel):
-    emails: Optional[List[str]] = None
-    records: Optional[List[AllowedEmailItem]] = None
-
-class AllowedEmailResponse(BaseModel):
-    id: int
-    admin_id: Optional[int] = None
-    admin_name: Optional[str] = None
-    admin_email: Optional[str] = None
-    email: str
-    name: Optional[str] = None
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
 class ManualAttendanceRequest(BaseModel):
     email: str
     name: Optional[str] = None
@@ -156,6 +134,7 @@ class AdminAccountSummary(BaseModel):
     is_approved: bool = True
     sessions_count: int = 0
     active_session_id: Optional[int] = None
+    students_count: int = 0
     whitelisted_students_count: int = 0
     total_attendance_marked: int = 0
     created_at: Optional[str] = None

@@ -7,12 +7,12 @@ from sqlalchemy import func
 from datetime import datetime, timezone, timedelta
 try:
     from ..database import get_db
-    from ..models import User, AllowedEmail, UserDevice, Student
+    from ..models import User, UserDevice, Student
     from ..schemas import DirectLoginRequest, AdminLoginRequest, AdminRegisterRequest, Token, UserResponse, AdminRegisterResponse
     from ..auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES, hash_password, verify_password
 except (ImportError, ValueError):
     from app.database import get_db
-    from app.models import User, AllowedEmail, UserDevice, Student
+    from app.models import User, UserDevice, Student
     from app.schemas import DirectLoginRequest, AdminLoginRequest, AdminRegisterRequest, Token, UserResponse, AdminRegisterResponse
     from app.auth.utils import create_access_token, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES, hash_password, verify_password
 
@@ -23,13 +23,13 @@ ADMIN_REGISTRATION_KEY = os.getenv("ADMIN_REGISTRATION_KEY", "admin123").strip()
 @router.post("/login", response_model=Token)
 def direct_login(request: DirectLoginRequest, db: Session = Depends(get_db)):
     try:
-        email = request.email.strip().lower()
-        full_name = request.full_name.strip()
+        email = (request.email or "").strip().lower()
+        full_name = (request.full_name or "").strip()
         device_id = (request.device_id or "").strip()
         device_name = (request.device_name or "Web Browser").strip()
         
-        if not email or not full_name:
-            raise HTTPException(status_code=400, detail="Name and Email are required")
+        if not email:
+            raise HTTPException(status_code=400, detail="Registered Email is required")
 
         # Determine if this user is or should be an Admin
         is_initial_admin = (email == INITIAL_ADMIN_EMAIL)
@@ -37,29 +37,27 @@ def direct_login(request: DirectLoginRequest, db: Session = Depends(get_db)):
         is_admin = is_initial_admin or (user is not None and user.role == "ADMIN")
 
         if not is_admin:
-            # 1. Primary Check: Verify email exists in Students table
+            # 1. Search the Students table by normalized email
             student_record = db.query(Student).filter(func.lower(Student.email) == email).first()
-            if student_record:
-                # 2. Check if student status is Active
-                student_status = (student_record.status or "").strip().lower()
-                if student_status != "active":
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"Access Denied: Your student account is currently Inactive. Please contact your Admin to activate your account."
-                    )
-                # Prioritize official enrolled name from Student directory
-                if student_record.name:
-                    full_name = student_record.name
-            else:
-                # Fallback check: AllowedEmail whitelist
-                allowed = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == email).first()
-                if not allowed:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Access Denied: Your email ID is not registered in the student directory. Please contact your Department Admin to enroll."
-                    )
-                if allowed.name:
-                    full_name = allowed.name
+            if not student_record:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Student account not found. Please contact your administrator."
+                )
+
+            # 2. Check student's status
+            student_status = (student_record.status or "").strip().lower()
+            if student_status != "active":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your student account is inactive. Please contact the administrator."
+                )
+
+            # Official enrolled name from Student directory
+            full_name = student_record.name or full_name or email.split("@")[0].title()
+        else:
+            if not full_name:
+                full_name = "Administrator"
 
         if not user:
             # Create user
@@ -145,8 +143,9 @@ def direct_login(request: DirectLoginRequest, db: Session = Depends(get_db)):
 
         # Generate JWT token
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        role_claim = "ADMIN" if is_admin else "student"
         access_token = create_access_token(
-            data={"sub": user.email, "role": user.role}, expires_delta=access_token_expires
+            data={"sub": user.email, "role": role_claim}, expires_delta=access_token_expires
         )
         return {
             "access_token": access_token, 
@@ -166,10 +165,13 @@ def to_user_response(user: User, db: Optional[Session] = None) -> UserResponse:
     resp.is_master_admin = is_master
 
     # Attach official student metadata if available
-    if db and user.role == "USER":
+    if db and user.role != "ADMIN":
         student = db.query(Student).filter(func.lower(Student.email) == user.email.strip().lower()).first()
         if student:
+            resp.role = "student"
             resp.register_number = student.register_number
+            resp.student_id = student.register_number
+            resp.studentId = student.register_number
             resp.department = student.department
             resp.year = student.year
             resp.student_status = student.status

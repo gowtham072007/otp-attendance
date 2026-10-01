@@ -12,13 +12,10 @@ from sqlalchemy import func
 import os
 try:
     from ..database import get_db
-    from ..models import User, AttendanceSession, OTP, AttendanceRecord, AllowedEmail, UserDevice, GeofenceConfig, Student
+    from ..models import User, AttendanceSession, OTP, AttendanceRecord, UserDevice, GeofenceConfig, Student
     from ..schemas import (
         OTPSessionResponse, 
         OTPResponse, 
-        AllowedEmailCreate, 
-        AllowedEmailBulkCreate, 
-        AllowedEmailResponse,
         GeofenceConfigResponse,
         GeofenceConfigUpdate,
         ManualAttendanceRequest,
@@ -28,13 +25,10 @@ try:
     from ..auth.utils import get_current_admin, hash_password
 except (ImportError, ValueError):
     from app.database import get_db
-    from app.models import User, AttendanceSession, OTP, AttendanceRecord, AllowedEmail, UserDevice, GeofenceConfig, Student
+    from app.models import User, AttendanceSession, OTP, AttendanceRecord, UserDevice, GeofenceConfig, Student
     from app.schemas import (
         OTPSessionResponse, 
         OTPResponse, 
-        AllowedEmailCreate, 
-        AllowedEmailBulkCreate, 
-        AllowedEmailResponse,
         GeofenceConfigResponse,
         GeofenceConfigUpdate,
         ManualAttendanceRequest,
@@ -158,19 +152,25 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
     ).all()
     present_user_ids = {r.user_id: r for r in attendance_records}
     
-    # Build student roster:
+    # Build student roster from registered active students:
     # If requester is Master Admin:
-    #   - If target_session is Master Admin session: all whitelisted students across the college
-    #   - If target_session is regular admin session: students of that regular admin
+    #   - If target_session is Master Admin session: all active students across the college
+    #   - If target_session is regular admin session: students enrolled under that regular admin
     # If requester is Regular Admin:
-    #   - ALWAYS scope roster strictly to THAT regular admin's whitelisted students
+    #   - ALWAYS scope roster strictly to THAT regular admin's enrolled students
     if is_requester_master:
         if master_admin_id and target_session.admin_id == master_admin_id:
-            allowed_list = db.query(AllowedEmail).all()
+            student_list = db.query(Student).filter(func.lower(Student.status) == "active").all()
         else:
-            allowed_list = db.query(AllowedEmail).filter(AllowedEmail.admin_id == target_session.admin_id).all()
+            student_list = db.query(Student).filter(
+                Student.admin_id == target_session.admin_id,
+                func.lower(Student.status) == "active"
+            ).all()
     else:
-        allowed_list = db.query(AllowedEmail).filter(AllowedEmail.admin_id == admin_id).all()
+        student_list = db.query(Student).filter(
+            Student.admin_id == admin_id,
+            func.lower(Student.status) == "active"
+        ).all()
         
     # Also get all regular students
     regular_users = db.query(User).filter(User.role == "USER").all()
@@ -178,17 +178,17 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
     
     # Build student roster
     roster = {}
-    for allowed in allowed_list:
-        clean_email = allowed.email.lower().strip()
-        if clean_email in admin_emails:
+    for st in student_list:
+        clean_email = (st.email or "").lower().strip()
+        if not clean_email or clean_email in admin_emails:
             continue
         user_obj = user_by_email.get(clean_email)
         if user_obj and user_obj.role == "ADMIN":
             continue
-        name = user_obj.full_name if (user_obj and user_obj.full_name) else (allowed.name or "Registered Student")
+        name = st.name or (user_obj.full_name if user_obj else clean_email)
         user_id = user_obj.id if user_obj else None
         roster[clean_email] = {
-            "email": allowed.email,
+            "email": clean_email,
             "name": name,
             "user_id": user_id
         }
@@ -341,10 +341,10 @@ def get_all_sessions(db: Session = Depends(get_db), admin: User = Depends(get_cu
             (AttendanceSession.admin_id == admin.id) | (AttendanceSession.admin_id == master_admin_id)
         ).order_by(AttendanceSession.id.desc()).all()
         
-    my_whitelisted_emails = set()
+    my_student_emails = set()
     if not is_master_admin(admin):
-        my_allowed = db.query(AllowedEmail).filter(AllowedEmail.admin_id == admin.id).all()
-        my_whitelisted_emails = {a.email.lower().strip() for a in my_allowed if a.email}
+        my_students = db.query(Student).filter(Student.admin_id == admin.id).all()
+        my_student_emails = {s.email.lower().strip() for s in my_students if s.email}
 
     result = []
     for s in sessions:
@@ -361,7 +361,7 @@ def get_all_sessions(db: Session = Depends(get_db), admin: User = Depends(get_cu
             count = db.query(AttendanceRecord).join(User, AttendanceRecord.user_id == User.id).filter(
                 AttendanceRecord.session_id == s.id,
                 User.role == "USER",
-                func.lower(User.email).in_(my_whitelisted_emails) if my_whitelisted_emails else False
+                func.lower(User.email).in_(my_student_emails) if my_student_emails else False
             ).count()
 
         result.append({
@@ -574,7 +574,7 @@ def export_attendance(session_id: Optional[int] = None, db: Session = Depends(ge
     writer.writerow(["--------------------------------------------------------------------------------"])
     writer.writerow(["EXECUTIVE ATTENDANCE SUMMARY"])
     writer.writerow(["--------------------------------------------------------------------------------"])
-    writer.writerow(["Total Whitelisted Students", summary.get("total", len(present_list) + len(absent_list))])
+    writer.writerow(["Total Enrolled Students", summary.get("total", len(present_list) + len(absent_list))])
     writer.writerow(["Total Present", summary.get("present", len(present_list))])
     writer.writerow(["Total Absent", summary.get("absent", len(absent_list))])
     writer.writerow(["Attendance Percentage", summary.get("rate", "0%")])
@@ -745,13 +745,11 @@ def manual_mark_attendance(payload: ManualAttendanceRequest, db: Session = Depen
             detail="Cannot mark attendance for an Administrator. Attendance records are strictly for students only."
         )
 
-    # Check AllowedEmail for display name
-    allowed = db.query(AllowedEmail).filter(
-        func.lower(AllowedEmail.email) == clean_email,
-        (AllowedEmail.admin_id == admin.id) | (AllowedEmail.admin_id.is_(None)) | (AllowedEmail.admin_id == master_admin_id)
-    ).first()
-    
-    full_name = payload.name.strip() if (payload.name and payload.name.strip()) else (allowed.name if (allowed and allowed.name) else clean_email.split("@")[0].replace(".", " ").title())
+    # Check Student directory for display name
+    student_record = db.query(Student).filter(func.lower(Student.email) == clean_email).first()
+    full_name = payload.name.strip() if (payload.name and payload.name.strip()) else (
+        student_record.name if (student_record and student_record.name) else clean_email.split("@")[0].replace(".", " ").title()
+    )
 
     if not user:
         import uuid
@@ -766,20 +764,6 @@ def manual_mark_attendance(payload: ManualAttendanceRequest, db: Session = Depen
         db.refresh(user)
     elif payload.name and payload.name.strip() and user.full_name != payload.name.strip():
         user.full_name = payload.name.strip()
-        db.commit()
-
-    # Automatically ensure student is present in this admin's whitelist so they appear in reports and future sessions
-    existing_allowed = db.query(AllowedEmail).filter(
-        AllowedEmail.admin_id == admin.id,
-        func.lower(AllowedEmail.email) == clean_email
-    ).first()
-    if not existing_allowed and not is_master:
-        new_allowed = AllowedEmail(
-            admin_id=admin.id,
-            email=clean_email,
-            name=user.full_name
-        )
-        db.add(new_allowed)
         db.commit()
 
     # 3. Create or Update AttendanceRecord
@@ -819,208 +803,7 @@ def manual_mark_attendance(payload: ManualAttendanceRequest, db: Session = Depen
     }
 
 
-@router.get("/allowed-emails", response_model=List[AllowedEmailResponse])
-def get_allowed_emails(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    admin_emails = {a.email.lower().strip() for a in db.query(User).filter(User.role == "ADMIN").all() if a.email}
-    all_admins = {u.id: u for u in db.query(User).filter(User.role == "ADMIN").all()}
 
-    # Master Admin sees ALL authorized students across all admins; regular admin sees only their own
-    if is_master_admin(admin):
-        records = db.query(AllowedEmail).order_by(AllowedEmail.created_at.desc()).all()
-    else:
-        records = db.query(AllowedEmail).filter(
-            AllowedEmail.admin_id == admin.id
-        ).order_by(AllowedEmail.created_at.desc()).all()
-
-    result = []
-    for r in records:
-        if r.email.lower().strip() in admin_emails:
-            continue
-        creator_admin = all_admins.get(r.admin_id) if r.admin_id else None
-        admin_name = creator_admin.full_name if creator_admin else ("Master Administrator" if not r.admin_id else "Administrator")
-        admin_email = creator_admin.email if creator_admin else None
-        result.append(AllowedEmailResponse(
-            id=r.id,
-            admin_id=r.admin_id,
-            admin_name=admin_name,
-            admin_email=admin_email,
-            email=r.email,
-            name=r.name,
-            created_at=r.created_at
-        ))
-    return result
-
-@router.post("/allowed-emails", response_model=AllowedEmailResponse)
-def add_allowed_email(payload: AllowedEmailCreate, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    email_clean = payload.email.strip().lower()
-    if not email_clean:
-        raise HTTPException(status_code=400, detail="Email is required")
-    
-    if "@" not in email_clean or "." not in email_clean:
-        raise HTTPException(status_code=400, detail="Invalid email address format")
-    
-    # Check if this email belongs to an Administrator account
-    admin_user = db.query(User).filter(func.lower(User.email) == email_clean, User.role == "ADMIN").first()
-    if admin_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot add an Administrator account to the Student Whitelist. Whitelist and Attendance records are strictly for students only."
-        )
-
-    # Check if already exists for this admin
-    existing = db.query(AllowedEmail).filter(
-        AllowedEmail.admin_id == admin.id,
-        func.lower(AllowedEmail.email) == email_clean
-    ).first()
-    if existing:
-        raise HTTPException(status_code=400, detail=f"Student email '{email_clean}' is already in your authorized list")
-    
-    new_allowed = AllowedEmail(
-        admin_id=admin.id,
-        email=email_clean,
-        name=payload.name.strip() if payload.name else None
-    )
-    db.add(new_allowed)
-    db.commit()
-    db.refresh(new_allowed)
-    return AllowedEmailResponse(
-        id=new_allowed.id,
-        admin_id=new_allowed.admin_id,
-        admin_name=admin.full_name or "Administrator",
-        admin_email=admin.email,
-        email=new_allowed.email,
-        name=new_allowed.name,
-        created_at=new_allowed.created_at
-    )
-
-@router.get("/allowed-emails/export")
-def export_allowed_emails(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    """Export authorized student whitelist as a downloadable CSV file."""
-    query = db.query(AllowedEmail)
-    if not is_master_admin(admin):
-        query = query.filter(AllowedEmail.admin_id == admin.id)
-    
-    records = query.order_by(AllowedEmail.created_at.desc()).all()
-    
-    output = io.StringIO()
-    writer = csv.writer(output)
-    
-    # 1. Header Metadata Section
-    writer.writerow(["================================================================================"])
-    writer.writerow(["AUTHORIZED STUDENTS DIRECTORY - FRANCIS XAVIER ENGINEERING COLLEGE"])
-    writer.writerow(["================================================================================"])
-    writer.writerow(["Export Generated On (IST)", datetime.now(IST).strftime('%d-%m-%Y, %I:%M:%S %p')])
-    writer.writerow(["Exported By", f"{admin.full_name or 'Administrator'} ({admin.email})"])
-    writer.writerow(["Scope", "All Administrators" if is_master_admin(admin) else "Assigned Department / Instructor"])
-    writer.writerow(["Total Authorized Students", len(records)])
-    writer.writerow([])
-    
-    # 2. Table Headers
-    writer.writerow(["S.No", "Student Email", "Student Name", "Authorized By Admin", "Added On (IST)"])
-    
-    admin_cache = {}
-    for idx, rec in enumerate(records, start=1):
-        if rec.admin_id:
-            if rec.admin_id not in admin_cache:
-                adm = db.query(User).filter(User.id == rec.admin_id).first()
-                admin_cache[rec.admin_id] = f"{adm.full_name or 'Admin'} ({adm.email})" if adm else "System"
-            adm_str = admin_cache[rec.admin_id]
-        else:
-            adm_str = "Master Admin"
-            
-        created_str = rec.created_at.astimezone(IST).strftime('%d-%m-%Y, %I:%M %p') if rec.created_at else "—"
-        writer.writerow([idx, rec.email, rec.name or "—", adm_str, created_str])
-        
-    output.seek(0)
-    filename = f"authorized_students_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.csv"
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
-    )
-
-@router.post("/allowed-emails/bulk")
-def add_bulk_allowed_emails(payload: AllowedEmailBulkCreate, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    added_count = 0
-    skipped_count = 0
-    errors = []
-    
-    # Fetch admin emails to prevent whitelisting admin emails as students
-    admin_emails = {a.email.lower().strip() for a in db.query(User).filter(User.role == "ADMIN").all() if a.email}
-
-    # Normalize items from either records (CSV structured with name) or emails (simple list)
-    items_to_process = []
-    if payload.records:
-        for r in payload.records:
-            if r and r.email:
-                items_to_process.append({"email": r.email, "name": r.name})
-    if payload.emails:
-        for e in payload.emails:
-            if e:
-                items_to_process.append({"email": e, "name": None})
-
-    if not items_to_process:
-        raise HTTPException(status_code=400, detail="No student email records provided.")
-
-    for item in items_to_process:
-        raw_email = str(item.get("email", "")).strip()
-        raw_name = item.get("name")
-        clean_email = raw_email.lower()
-        clean_name = str(raw_name).strip() if raw_name else None
-
-        if not clean_email:
-            continue
-        if "@" not in clean_email or "." not in clean_email:
-            skipped_count += 1
-            errors.append(f"Invalid email format: '{raw_email}'")
-            continue
-        
-        if clean_email in admin_emails:
-            skipped_count += 1
-            errors.append(f"Skipped admin account email (User accounts only): '{raw_email}'")
-            continue
-
-        existing = db.query(AllowedEmail).filter(
-            AllowedEmail.admin_id == admin.id,
-            func.lower(AllowedEmail.email) == clean_email
-        ).first()
-        
-        if existing:
-            # If name was provided and existing didn't have a name, update it
-            if clean_name and not existing.name:
-                existing.name = clean_name
-            skipped_count += 1
-            continue
-            
-        new_entry = AllowedEmail(
-            admin_id=admin.id, 
-            email=clean_email, 
-            name=clean_name
-        )
-        db.add(new_entry)
-        added_count += 1
-        
-    db.commit()
-    return {
-        "message": f"Successfully processed {len(items_to_process)} records: {added_count} student users added, {skipped_count} skipped.",
-        "added_count": added_count,
-        "skipped_count": skipped_count,
-        "errors": errors
-    }
-
-@router.delete("/allowed-emails/{email_id}")
-def delete_allowed_email(email_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    query = db.query(AllowedEmail).filter(AllowedEmail.id == email_id)
-    if not is_master_admin(admin):
-        query = query.filter(AllowedEmail.admin_id == admin.id)
-
-    record = query.first()
-    if not record:
-        raise HTTPException(status_code=404, detail="Authorized student record not found in your list.")
-    
-    db.delete(record)
-    db.commit()
-    return {"message": "Student removed from authorized list successfully"}
 
 # --- Student Device Reset Endpoints ---
 
@@ -1097,8 +880,8 @@ def get_all_admins(db: Session = Depends(get_db), admin: User = Depends(get_curr
         # Count total sessions
         sess_count = db.query(AttendanceSession).filter(AttendanceSession.admin_id == a.id).count()
         
-        # Count whitelisted students
-        whitelist_count = db.query(AllowedEmail).filter(AllowedEmail.admin_id == a.id).count()
+        # Count enrolled students
+        students_count = db.query(Student).filter(Student.admin_id == a.id).count()
         
         # Count total attendance records marked across this admin's sessions
         records_count = db.query(AttendanceRecord).join(AttendanceSession, AttendanceRecord.session_id == AttendanceSession.id).filter(
@@ -1116,7 +899,7 @@ def get_all_admins(db: Session = Depends(get_db), admin: User = Depends(get_curr
             is_approved=is_appr,
             sessions_count=sess_count,
             active_session_id=active_sess.id if active_sess else None,
-            whitelisted_students_count=whitelist_count,
+            whitelisted_students_count=students_count,
             total_attendance_marked=records_count,
             created_at=format_ist_date(a.created_at) if hasattr(a, 'created_at') and a.created_at else None
         ))
@@ -1234,8 +1017,8 @@ def delete_admin_by_master(
     if is_master_admin(target_admin):
         raise HTTPException(status_code=400, detail="The Master Administrator account is protected and cannot be deleted.")
         
-    # Clean up associated whitelist and sessions
-    db.query(AllowedEmail).filter(AllowedEmail.admin_id == target_admin.id).delete()
+    # Clean up associated enrolled students and sessions
+    db.query(Student).filter(Student.admin_id == target_admin.id).delete()
     
     sessions = db.query(AttendanceSession).filter(AttendanceSession.admin_id == target_admin.id).all()
     for s in sessions:

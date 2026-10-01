@@ -10,13 +10,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 try:
     from ..database import get_db
-    from ..models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, AllowedEmail, Student
+    from ..models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, Student
     from ..schemas import AttendanceSubmission, AutoOTPRequest, AutoOTPResponse
     from ..auth.utils import get_current_user
     from ..utils.email_service import send_otp_email
 except (ImportError, ValueError):
     from app.database import get_db
-    from app.models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, AllowedEmail, Student
+    from app.models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, Student
     from app.schemas import AttendanceSubmission, AutoOTPRequest, AutoOTPResponse
     from app.auth.utils import get_current_user
     from app.utils.email_service import send_otp_email
@@ -72,24 +72,21 @@ def get_active_geofence(db: Session) -> GeofenceConfig:
 def get_active_session_for_student(db: Session, student_user: User) -> Optional[AttendanceSession]:
     """
     Finds the active attendance session relevant for this specific student:
-    - If started by a Regular Admin: Only students authorized by that admin are eligible.
-    - If started by the Master Admin: ALL whitelisted students are eligible (Institute-wide session).
+    - If started by a Regular Admin: Only students enrolled by that admin are eligible.
+    - If started by the Master Admin: ALL active enrolled students are eligible (Institute-wide session).
     """
     clean_email = (student_user.email or "").strip().lower()
-    allowed_entries = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == clean_email).all()
     student_record = db.query(Student).filter(func.lower(Student.email) == clean_email).first()
 
-    if not allowed_entries and not student_record:
+    if not student_record:
         return None
 
-    if student_record and (student_record.status or "").strip().lower() != "active":
+    if (student_record.status or "").strip().lower() != "active":
         return None
 
-    authorized_admin_ids = {a.admin_id for a in allowed_entries if a.admin_id is not None}
-    if student_record and student_record.admin_id:
+    authorized_admin_ids = set()
+    if student_record.admin_id:
         authorized_admin_ids.add(student_record.admin_id)
-
-    has_unscoped_whitelist = any(a.admin_id is None for a in allowed_entries)
 
     master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
     master_admin_id = master_admin.id if master_admin else None
@@ -98,30 +95,34 @@ def get_active_session_for_student(db: Session, student_user: User) -> Optional[
     if not active_sessions:
         return None
 
-    # Priority 1: Check active session created by student's authorizing admin
+    # Priority 1: Check active session created by student's enrolling admin
     for s in active_sessions:
         if s.admin_id in authorized_admin_ids:
             return s
 
-    # Priority 2: Check active session created by Master Admin (all-user institute session)
+    # Priority 2: Check active session created by Master Admin (all-student institute session)
     for s in active_sessions:
         if master_admin_id and s.admin_id == master_admin_id:
             return s
 
-    # Priority 3: Legacy unscoped entries
-    if has_unscoped_whitelist:
+    # Priority 3: If no admin assigned to student, return active session
+    if not student_record.admin_id and active_sessions:
         return active_sessions[0]
 
     return None
 
 def get_today_session_for_student(db: Session, student_user: User) -> Optional[AttendanceSession]:
     clean_email = (student_user.email or "").strip().lower()
-    allowed_entries = db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == clean_email).all()
-    if not allowed_entries:
+    student_record = db.query(Student).filter(func.lower(Student.email) == clean_email).first()
+    if not student_record:
         return None
 
-    authorized_admin_ids = {a.admin_id for a in allowed_entries if a.admin_id is not None}
-    has_unscoped_whitelist = any(a.admin_id is None for a in allowed_entries)
+    if (student_record.status or "").strip().lower() != "active":
+        return None
+
+    authorized_admin_ids = set()
+    if student_record.admin_id:
+        authorized_admin_ids.add(student_record.admin_id)
 
     master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
     master_admin_id = master_admin.id if master_admin else None
@@ -148,7 +149,7 @@ def get_today_session_for_student(db: Session, student_user: User) -> Optional[A
         if master_admin_id and s.admin_id == master_admin_id:
             return s
 
-    if has_unscoped_whitelist:
+    if not student_record.admin_id and today_sessions:
         return today_sessions[0]
 
     return None

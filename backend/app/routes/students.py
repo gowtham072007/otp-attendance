@@ -8,7 +8,7 @@ from sqlalchemy import func, or_
 
 try:
     from ..database import get_db
-    from ..models import User, Student, AllowedEmail
+    from ..models import User, Student
     from ..schemas import (
         StudentCreate, 
         StudentUpdate, 
@@ -18,7 +18,7 @@ try:
     from ..auth.utils import get_current_admin
 except (ImportError, ValueError):
     from app.database import get_db
-    from app.models import User, Student, AllowedEmail
+    from app.models import User, Student
     from app.schemas import (
         StudentCreate, 
         StudentUpdate, 
@@ -85,7 +85,7 @@ def create_student(
 ):
     """
     Add a new student to the central database, scoped to the authenticated Admin.
-    Also ensures the student is added to the authorized email whitelist for attendance.
+    The student email becomes the authenticated login identity.
     """
     clean_name = payload.name.strip()
     if not clean_name:
@@ -136,22 +136,7 @@ def create_student(
     )
     db.add(new_student)
 
-    # 5. Automatically whitelist in AllowedEmail for seamless attendance login
-    existing_allowed = db.query(AllowedEmail).filter(
-        AllowedEmail.admin_id == admin.id,
-        func.lower(AllowedEmail.email) == clean_email
-    ).first()
-    if not existing_allowed:
-        new_allowed = AllowedEmail(
-            admin_id=admin.id,
-            email=clean_email,
-            name=clean_name
-        )
-        db.add(new_allowed)
-    elif existing_allowed and not existing_allowed.name:
-        existing_allowed.name = clean_name
-
-    # 6. Update user's full_name if user record already exists
+    # 5. Update user's full_name if user record already exists
     existing_user = db.query(User).filter(func.lower(User.email) == clean_email, User.role == "USER").first()
     if existing_user and not existing_user.full_name:
         existing_user.full_name = clean_name
@@ -303,15 +288,7 @@ def update_student(
             raise HTTPException(status_code=400, detail=f"Email '{clean_email}' is already used by another student.")
         student.email = clean_email
 
-        # If email changed, synchronize with AllowedEmail
-        if old_email and old_email.lower() != clean_email:
-            allowed = db.query(AllowedEmail).filter(
-                AllowedEmail.admin_id == student.admin_id,
-                func.lower(AllowedEmail.email) == old_email.lower()
-            ).first()
-            if allowed:
-                allowed.email = clean_email
-                allowed.name = student.name
+
 
     # 4. Optional fields
     if payload.phone is not None:
@@ -359,11 +336,7 @@ def delete_student(
     student_email = student.email.lower().strip()
     admin_id = student.admin_id
 
-    # Clean up AllowedEmail entry created for this student by this admin
-    db.query(AllowedEmail).filter(
-        AllowedEmail.admin_id == admin_id,
-        func.lower(AllowedEmail.email) == student_email
-    ).delete(synchronize_session=False)
+
 
     db.delete(student)
     db.commit()

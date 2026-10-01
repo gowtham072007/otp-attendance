@@ -375,9 +375,9 @@ const UserDashboard = () => {
           <div>
             <div className="flex items-center flex-wrap gap-1.5">
               <h1 className="text-base font-black text-black dark:text-white tracking-tight">Hello, {user.full_name}</h1>
-              {user.register_number && (
+              {(user.register_number || user.student_id || user.studentId) && (
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  {user.register_number}
+                  {user.register_number || user.student_id || user.studentId}
                 </span>
               )}
               {user.device && (

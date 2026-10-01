@@ -76,7 +76,7 @@ const formatISTDateTime = (dateStr) => {
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
   const isMasterAdmin = Boolean(user?.is_master_admin || user?.email?.toLowerCase() === 'admin@francisxavier.ac.in' || user?.email?.toLowerCase() === 'admin@example.com');
-  const [activeTab, setActiveTab] = useState('session'); // 'session' | 'whitelist' | 'location' | 'admins'
+  const [activeTab, setActiveTab] = useState('session'); // 'session' | 'students' | 'location' | 'admins'
   const [session, setSession] = useState(null);
   const [isGlobalSession, setIsGlobalSession] = useState(false);
   const [otp, setOtp] = useState(null);
@@ -130,21 +130,8 @@ const AdminDashboard = () => {
   const [manualSessionId, setManualSessionId] = useState(null);
   const [manualLoading, setManualLoading] = useState(false);
 
-  // Whitelist state
-  const [allowedEmails, setAllowedEmails] = useState([]);
-  const [newEmail, setNewEmail] = useState('');
-  const [newName, setNewName] = useState('');
-  const [bulkEmails, setBulkEmails] = useState('');
-  const [showBulkInput, setShowBulkInput] = useState(false);
-  const [bulkMode, setBulkMode] = useState('csv'); // 'csv' | 'text'
-  const [csvFile, setCsvFile] = useState(null);
-  const [parsedCsvRecords, setParsedCsvRecords] = useState([]);
-  const [csvParseError, setCsvParseError] = useState('');
-  const [exportingWhitelist, setExportingWhitelist] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [actionLoading, setActionLoading] = useState(false);
-  const [whitelistSuccess, setWhitelistSuccess] = useState('');
-  const [whitelistError, setWhitelistError] = useState('');
+  // Enrolled Students list for manual attendance selection
+  const [enrolledStudents, setEnrolledStudents] = useState([]);
 
   // Geofence & Location state
   const [geofenceForm, setGeofenceForm] = useState({
@@ -237,12 +224,12 @@ const AdminDashboard = () => {
     }
   };
 
-  const fetchAllowedEmails = async () => {
+  const fetchEnrolledStudents = async () => {
     try {
-      const res = await api.get('/admin/allowed-emails');
-      setAllowedEmails(res.data);
+      const res = await api.get('/students');
+      setEnrolledStudents(Array.isArray(res.data) ? res.data : (res.data.students || []));
     } catch (err) {
-      console.error("Failed to fetch allowed emails", err);
+      console.error("Failed to fetch enrolled students", err);
     }
   };
 
@@ -355,7 +342,7 @@ const AdminDashboard = () => {
         fetchCurrentSession(), 
         fetchAttendance(), 
         fetchAllSessions(),
-        fetchAllowedEmails(),
+        fetchEnrolledStudents(),
         fetchGeofence()
       ];
       if (isMasterAdmin) {
@@ -678,273 +665,6 @@ const AdminDashboard = () => {
     }
   };
 
-  // Whitelist Actions
-  const handleAddSingleEmail = async (e) => {
-    e.preventDefault();
-    setWhitelistError('');
-    setWhitelistSuccess('');
-
-    if (!newEmail.trim()) {
-      setWhitelistError('Email address is required.');
-      return;
-    }
-
-    setActionLoading(true);
-    try {
-      const res = await api.post('/admin/allowed-emails', {
-        email: newEmail.trim(),
-        name: newName.trim() || undefined
-      });
-      setAllowedEmails([res.data, ...allowedEmails]);
-      setNewEmail('');
-      setNewName('');
-      setWhitelistSuccess(`Added ${res.data.email} successfully.`);
-      fetchAttendance(selectedSessionId);
-      setTimeout(() => setWhitelistSuccess(''), 4000);
-    } catch (err) {
-      setWhitelistError(err.response?.data?.detail || 'Failed to add email');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // Robust client-side CSV parser
-  const parseCsvContent = (text) => {
-    setCsvParseError('');
-    if (!text || !text.trim()) {
-      setCsvParseError('The uploaded CSV file is empty.');
-      setParsedCsvRecords([]);
-      return;
-    }
-
-    const lines = text.split(/\r\n|\n|\r/).map((l) => l.trim()).filter((l) => l.length > 0);
-    if (lines.length === 0) {
-      setCsvParseError('No valid rows found in CSV file.');
-      setParsedCsvRecords([]);
-      return;
-    }
-
-    // Determine delimiter (comma, tab, semicolon)
-    const firstLine = lines[0];
-    let delimiter = ',';
-    if (firstLine.includes('\t')) delimiter = '\t';
-    else if (firstLine.includes(';') && !firstLine.includes(',')) delimiter = ';';
-
-    const parseLine = (line) => {
-      const pattern = new RegExp(`(?:^|${delimiter})(?:"([^"]*)"|([^"${delimiter}]*))`, 'g');
-      const cells = [];
-      let match;
-      while ((match = pattern.exec(line)) !== null) {
-        let val = match[1] !== undefined ? match[1] : match[2];
-        cells.push((val || '').trim());
-      }
-      return cells;
-    };
-
-    const headerCells = parseLine(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    let emailIdx = -1;
-    let nameIdx = -1;
-    let startRow = 0;
-
-    // Check if first row is header
-    const hasEmailHeader = headerCells.some((h, i) => {
-      if (h.includes('email') || h.includes('mail')) {
-        emailIdx = i;
-        return true;
-      }
-      return false;
-    });
-
-    headerCells.forEach((h, i) => {
-      if (h.includes('name') || h.includes('student') || h.includes('fullname')) {
-        nameIdx = i;
-      }
-    });
-
-    if (hasEmailHeader) {
-      startRow = 1;
-    } else {
-      emailIdx = 0;
-      nameIdx = 1;
-      for (let r = 0; r < Math.min(lines.length, 5); r++) {
-        const cells = parseLine(lines[r]);
-        cells.forEach((cell, idx) => {
-          if (cell.includes('@') && cell.includes('.')) {
-            emailIdx = idx;
-          }
-        });
-      }
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const records = [];
-    const seenEmails = new Set();
-
-    for (let i = startRow; i < lines.length; i++) {
-      const cells = parseLine(lines[i]);
-      if (cells.length === 0) continue;
-
-      let email = (cells[emailIdx] || '').trim().toLowerCase();
-      if (!emailRegex.test(email)) {
-        const found = cells.find((c) => emailRegex.test(c.trim()));
-        if (found) email = found.trim().toLowerCase();
-      }
-
-      if (email && emailRegex.test(email)) {
-        if (!seenEmails.has(email)) {
-          seenEmails.add(email);
-          let name = nameIdx !== -1 && nameIdx !== emailIdx ? (cells[nameIdx] || '').trim() : '';
-          if (!name) {
-            const candidate = cells.find((c, idx) => idx !== emailIdx && c.trim().length > 0 && !c.includes('@'));
-            if (candidate) name = candidate.trim();
-          }
-          records.push({ email, name: name || null });
-        }
-      }
-    }
-
-    if (records.length === 0) {
-      setCsvParseError('No valid student email addresses found in the CSV. Please ensure emails contain "@" and "."');
-      setParsedCsvRecords([]);
-      return;
-    }
-
-    setParsedCsvRecords(records);
-  };
-
-  const handleCsvFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setCsvFile(file);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      parseCsvContent(event.target?.result);
-    };
-    reader.onerror = () => {
-      setCsvParseError('Failed to read the selected CSV file.');
-    };
-    reader.readAsText(file);
-  };
-
-  const handleDownloadCsvTemplate = () => {
-    const templateContent = "email,name\nstudent1@francisxavier.ac.in,John Doe\nstudent2@francisxavier.ac.in,Jane Smith\nstudent3@francisxavier.ac.in,Alex Kumar\n";
-    const blob = new Blob([templateContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'student_whitelist_template.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleExportWhitelistCsv = async () => {
-    setExportingWhitelist(true);
-    try {
-      const response = await api.get('/admin/allowed-emails/export', {
-        responseType: 'blob'
-      });
-      const blob = new Blob([response.data], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `authorized_students_${new Date().toISOString().slice(0, 10)}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      // Client-side fallback if network error
-      if (allowedEmails.length > 0) {
-        let csvContent = "S.No,Student Email,Student Name,Added On\n";
-        allowedEmails.forEach((item, idx) => {
-          csvContent += `${idx + 1},"${item.email}","${item.name || ''}","${item.created_at || ''}"\n`;
-        });
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.setAttribute('href', url);
-        link.setAttribute('download', `authorized_students_${new Date().toISOString().slice(0, 10)}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      } else {
-        alert('No authorized student accounts to export.');
-      }
-    } finally {
-      setExportingWhitelist(false);
-    }
-  };
-
-  const handleAddBulkEmails = async (e) => {
-    e.preventDefault();
-    setWhitelistError('');
-    setWhitelistSuccess('');
-
-    let payload = {};
-    if (bulkMode === 'csv') {
-      if (parsedCsvRecords.length === 0) {
-        setWhitelistError('Please select a valid CSV file with student records.');
-        return;
-      }
-      payload = { records: parsedCsvRecords };
-    } else {
-      const emailList = bulkEmails
-        .split(/[\n,;]+/)
-        .map((e) => e.trim())
-        .filter((e) => e.length > 0);
-
-      if (emailList.length === 0) {
-        setWhitelistError('Please enter at least one email address.');
-        return;
-      }
-      payload = { emails: emailList };
-    }
-
-    setActionLoading(true);
-    try {
-      const res = await api.post('/admin/allowed-emails/bulk', payload);
-      setWhitelistSuccess(res.data.message || `Successfully added ${bulkMode === 'csv' ? parsedCsvRecords.length : 'all'} student records.`);
-      setBulkEmails('');
-      setCsvFile(null);
-      setParsedCsvRecords([]);
-      setShowBulkInput(false);
-      fetchAllowedEmails();
-      fetchAttendance(selectedSessionId);
-      setTimeout(() => setWhitelistSuccess(''), 6000);
-    } catch (err) {
-      setWhitelistError(err.response?.data?.detail || 'Failed to bulk import student records');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleDeleteAllowedEmail = async (id, email) => {
-    if (!window.confirm(`Are you sure you want to remove '${email}' from authorized logins?`)) {
-      return;
-    }
-    setWhitelistError('');
-    setWhitelistSuccess('');
-
-    try {
-      await api.delete(`/admin/allowed-emails/${id}`);
-      setAllowedEmails(allowedEmails.filter((item) => item.id !== id));
-      setWhitelistSuccess(`Removed ${email}`);
-      fetchAttendance(selectedSessionId);
-      setTimeout(() => setWhitelistSuccess(''), 4000);
-    } catch (err) {
-      setWhitelistError(err.response?.data?.detail || 'Failed to remove email');
-    }
-  };
-
-  // Filtered Whitelist Emails
-  const filteredWhitelistEmails = allowedEmails.filter((item) => {
-    const q = searchQuery.toLowerCase();
-    return item.email.toLowerCase().includes(q) || (item.name && item.name.toLowerCase().includes(q));
-  });
 
   // Filtered Attendance Records (Present / Absent)
   const filteredAttendanceRecords = attendanceReport.records.filter((rec) => {
@@ -1013,20 +733,6 @@ const AdminDashboard = () => {
             <GraduationCap size={15} className="text-emerald-500" />
             <span>Students</span>
           </button>
-          <button
-            onClick={() => setActiveTab('whitelist')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'whitelist'
-                ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm'
-                : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
-            }`}
-          >
-            <Mail size={14} />
-            <span>Authorized Emails</span>
-            <span className="ml-1 text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-700">
-              {allowedEmails.length}
-            </span>
-          </button>
           {isMasterAdmin && (
             <>
               <button
@@ -1071,7 +777,7 @@ const AdminDashboard = () => {
       </nav>
 
       {/* Mobile Tab Switcher */}
-      <div className={`sm:hidden px-6 pt-4 grid ${isMasterAdmin ? 'grid-cols-5' : 'grid-cols-3'} gap-1.5`}>
+      <div className={`sm:hidden px-6 pt-4 grid ${isMasterAdmin ? 'grid-cols-4' : 'grid-cols-2'} gap-1.5`}>
         <button
           onClick={() => setActiveTab('session')}
           className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
@@ -1093,17 +799,6 @@ const AdminDashboard = () => {
         >
           <GraduationCap size={13} className="text-emerald-500" />
           <span>Students</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('whitelist')}
-          className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
-            activeTab === 'whitelist'
-              ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
-              : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
-          }`}
-        >
-          <Mail size={13} />
-          <span>Emails</span>
         </button>
         {isMasterAdmin && (
           <>
@@ -1269,7 +964,7 @@ const AdminDashboard = () => {
                           </span>
                         </div>
                         <p className="text-xs text-rose-700/80 dark:text-rose-400 mt-0.5">
-                          Authorized students who did not check in
+                          Enrolled students who did not check in
                         </p>
                       </div>
                     </div>
@@ -1315,7 +1010,7 @@ const AdminDashboard = () => {
                       ))
                     ) : (
                       <div className="py-8 text-center text-xs font-mono text-rose-700/60 dark:text-rose-400/60">
-                        All authorized students are present! (0 absent)
+                        All enrolled students are present! (0 absent)
                       </div>
                     )}
                   </div>
@@ -1799,366 +1494,6 @@ const AdminDashboard = () => {
           <StudentManagement isMasterAdmin={isMasterAdmin} currentUser={user} />
         )}
 
-        {/* TAB 3: Authorized Student Email Whitelist */}
-        {activeTab === 'whitelist' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
-            {/* Left Column: Add Allowed Email Form */}
-            <div className="space-y-6 lg:col-span-1">
-              
-              {/* Status/Banner alerts */}
-              {whitelistSuccess && (
-                <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 px-4 py-3 rounded-2xl text-xs font-semibold flex items-center space-x-2">
-                  <Check size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span>{whitelistSuccess}</span>
-                </div>
-              )}
-              {whitelistError && (
-                <div className="bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 text-red-800 dark:text-red-200 px-4 py-3 rounded-2xl text-xs font-semibold flex items-center space-x-2">
-                  <AlertCircle size={16} className="text-red-600 dark:text-red-400 shrink-0" />
-                  <span>{whitelistError}</span>
-                </div>
-              )}
-
-              {/* Single Add Card */}
-              <div className="bg-white dark:bg-zinc-900/90 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 flex flex-col">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-base font-black uppercase tracking-wider text-black dark:text-white">Authorize Student</h2>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Only registered emails can sign in</p>
-                  </div>
-                  <div className="p-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700">
-                    <UserPlus size={18} />
-                  </div>
-                </div>
-
-                <form onSubmit={handleAddSingleEmail} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1.5">
-                      Student Email <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="username@francisxavier.ac.in"
-                      value={newEmail}
-                      onChange={(e) => setNewEmail(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/60 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800 outline-none transition font-medium text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1.5">
-                      Student Name <span className="text-zinc-400 font-normal">(Optional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Alex Johnson"
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/60 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800 outline-none transition font-medium text-sm"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={actionLoading}
-                    className="w-full flex items-center justify-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 active:scale-[0.99] text-white py-3.5 rounded-xl font-bold transition shadow-md disabled:opacity-50 text-sm"
-                  >
-                    <Plus size={16} />
-                    <span>{actionLoading ? 'Saving...' : 'Save Email ID'}</span>
-                  </button>
-                </form>
-
-                <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                  <button
-                    type="button"
-                    onClick={() => setShowBulkInput(!showBulkInput)}
-                    className="w-full flex items-center justify-center space-x-1.5 text-center text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white transition py-2 cursor-pointer"
-                  >
-                    <FileSpreadsheet size={14} className="text-emerald-500" />
-                    <span>{showBulkInput ? "← Hide Bulk Import" : "⚡ Bulk Upload (CSV File / Paste)"}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Enhanced Bulk Add & CSV Upload Card */}
-              {showBulkInput && (
-                <div className="bg-white dark:bg-zinc-900/90 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 flex flex-col space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-black uppercase tracking-wider text-black dark:text-white">Bulk Student Whitelist</h3>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Import student user accounts via CSV file or direct text paste.</p>
-                    </div>
-                  </div>
-
-                  {/* Mode Selector Tabs */}
-                  <div className="grid grid-cols-2 p-1 bg-zinc-100 dark:bg-zinc-800/80 rounded-xl border border-zinc-200 dark:border-zinc-700/80">
-                    <button
-                      type="button"
-                      onClick={() => { setBulkMode('csv'); setCsvParseError(''); }}
-                      className={`py-2 text-xs font-bold font-mono uppercase tracking-wider rounded-lg transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
-                        bulkMode === 'csv'
-                          ? 'bg-white dark:bg-zinc-900 text-black dark:text-white shadow-xs'
-                          : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
-                      }`}
-                    >
-                      <FileSpreadsheet size={13} className={bulkMode === 'csv' ? "text-emerald-500" : ""} />
-                      <span>CSV Upload</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setBulkMode('text'); setCsvParseError(''); }}
-                      className={`py-2 text-xs font-bold font-mono uppercase tracking-wider rounded-lg transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
-                        bulkMode === 'text'
-                          ? 'bg-white dark:bg-zinc-900 text-black dark:text-white shadow-xs'
-                          : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
-                      }`}
-                    >
-                      <FileText size={13} />
-                      <span>Text Paste</span>
-                    </button>
-                  </div>
-
-                  <form onSubmit={handleAddBulkEmails} className="space-y-3">
-                    {/* CSV FILE MODE */}
-                    {bulkMode === 'csv' && (
-                      <div className="space-y-3">
-                        {/* Sample CSV Download pill */}
-                        <div className="flex items-center justify-between text-xs bg-zinc-50 dark:bg-zinc-950/60 p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                          <div className="flex items-center space-x-2 text-zinc-600 dark:text-zinc-400">
-                            <FileSpreadsheet size={14} className="text-emerald-500" />
-                            <span>Columns: <strong>email</strong>, <strong>name</strong> (optional)</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={handleDownloadCsvTemplate}
-                            className="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-400 hover:underline font-bold text-[11px] cursor-pointer"
-                          >
-                            <FileDown size={12} />
-                            <span>Sample CSV</span>
-                          </button>
-                        </div>
-
-                        {/* File Dropzone Input */}
-                        <label
-                          htmlFor="whitelist-csv-input"
-                          className="flex flex-col items-center justify-center border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-black dark:hover:border-white rounded-2xl p-5 cursor-pointer bg-zinc-50/40 dark:bg-zinc-950/40 transition-colors group text-center"
-                        >
-                          <input
-                            id="whitelist-csv-input"
-                            type="file"
-                            accept=".csv,text/csv,application/vnd.ms-excel"
-                            onChange={handleCsvFileChange}
-                            className="hidden"
-                          />
-                          <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl group-hover:scale-105 transition-transform text-black dark:text-white border border-zinc-200 dark:border-zinc-700 mb-2">
-                            <Upload size={20} />
-                          </div>
-                          <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
-                            {csvFile ? csvFile.name : "Click to select or drop CSV file"}
-                          </p>
-                          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
-                            {csvFile ? `${(csvFile.size / 1024).toFixed(1)} KB` : "Supports standard .csv student lists"}
-                          </p>
-                        </label>
-
-                        {/* Error Alert */}
-                        {csvParseError && (
-                          <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-900/60 text-red-700 dark:text-red-300 text-xs flex items-start space-x-2">
-                            <AlertCircle size={15} className="shrink-0 mt-0.5" />
-                            <p>{csvParseError}</p>
-                          </div>
-                        )}
-
-                        {/* Parsed Preview */}
-                        {parsedCsvRecords.length > 0 && (
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80 text-[11px] font-mono font-bold rounded-lg">
-                                <CheckCircle size={12} />
-                                <span>{parsedCsvRecords.length} Student Users Ready</span>
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => { setCsvFile(null); setParsedCsvRecords([]); setCsvParseError(''); }}
-                                className="text-[11px] text-zinc-500 hover:text-red-500 flex items-center space-x-1 cursor-pointer"
-                              >
-                                <X size={12} />
-                                <span>Clear</span>
-                              </button>
-                            </div>
-
-                            <div className="max-h-36 overflow-y-auto space-y-1 p-2 bg-zinc-50 dark:bg-zinc-950 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-mono">
-                              {parsedCsvRecords.slice(0, 50).map((item, idx) => (
-                                <div key={idx} className="flex items-center justify-between text-zinc-700 dark:text-zinc-300 py-0.5 border-b border-zinc-100 dark:border-zinc-900 last:border-0">
-                                  <span className="truncate max-w-[180px] font-medium">{item.email}</span>
-                                  <span className="text-zinc-400 text-[10px] truncate max-w-[100px]">{item.name || '—'}</span>
-                                </div>
-                              ))}
-                              {parsedCsvRecords.length > 50 && (
-                                <p className="text-center text-[10px] text-zinc-400 pt-1">+ {parsedCsvRecords.length - 50} more students</p>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        <button
-                          type="submit"
-                          disabled={actionLoading || parsedCsvRecords.length === 0}
-                          className="w-full flex items-center justify-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white py-3.5 rounded-xl font-bold transition text-xs uppercase font-mono tracking-wider shadow-md disabled:opacity-50 cursor-pointer"
-                        >
-                          <Upload size={14} />
-                          <span>{actionLoading ? 'Importing CSV Records...' : `Import ${parsedCsvRecords.length > 0 ? parsedCsvRecords.length : ''} Students`}</span>
-                        </button>
-                      </div>
-                    )}
-
-                    {/* TEXT PASTE MODE */}
-                    {bulkMode === 'text' && (
-                      <div className="space-y-3">
-                        <textarea
-                          rows={5}
-                          placeholder={`student1@francisxavier.ac.in\nstudent2@francisxavier.ac.in\nstudent3@francisxavier.ac.in`}
-                          value={bulkEmails}
-                          onChange={(e) => setBulkEmails(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/60 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800 outline-none transition font-mono text-xs"
-                        />
-                        <button
-                          type="submit"
-                          disabled={actionLoading}
-                          className="w-full flex items-center justify-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white py-3.5 rounded-xl font-bold transition text-xs uppercase font-mono tracking-wider shadow-md disabled:opacity-50 cursor-pointer"
-                        >
-                          <span>{actionLoading ? 'Importing...' : 'Import Emails'}</span>
-                        </button>
-                      </div>
-                    )}
-                  </form>
-                </div>
-              )}
-
-              {/* Quick Whitelist Summary */}
-              <div className="bg-white dark:bg-zinc-900/90 p-5 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">Total Whitelisted</p>
-                  <p className="text-2xl font-black font-mono text-black dark:text-white mt-0.5">{allowedEmails.length}</p>
-                </div>
-                <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-black dark:text-white border border-zinc-200 dark:border-zinc-700">
-                  <Mail size={22} />
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column: Whitelisted Emails Table & Search */}
-            <div className="bg-white dark:bg-zinc-900/90 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 flex flex-col lg:col-span-2 overflow-hidden">
-              <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-50/50 dark:bg-zinc-900/50">
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <h2 className="text-base font-black uppercase tracking-wider text-black dark:text-white">Authorized Login Whitelist</h2>
-                    {isMasterAdmin && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-purple-100 dark:bg-purple-950/80 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                        👑 Master Admin (All Lists)
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    {isMasterAdmin 
-                      ? "Showing all authorized students across all administrators" 
-                      : "Only the students you have authorized can log into the portal"}
-                  </p>
-                </div>
-
-                {/* Search Bar & Export Button */}
-                <div className="flex items-center space-x-2 w-full sm:w-auto">
-                  <div className="relative flex-1 sm:w-64">
-                    <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-                    <input
-                      type="text"
-                      placeholder="Search email or name..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white placeholder-zinc-400 outline-none focus:border-black dark:focus:border-white transition font-medium"
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleExportWhitelistCsv}
-                    disabled={exportingWhitelist || allowedEmails.length === 0}
-                    className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-zinc-700 dark:text-zinc-200 shadow-2xs transition disabled:opacity-50 cursor-pointer shrink-0"
-                    title="Export all authorized students as CSV"
-                  >
-                    <Download size={13} className="text-emerald-500" />
-                    <span>{exportingWhitelist ? "Exporting..." : "Export CSV"}</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-auto p-0 max-h-[600px]">
-                <table className="w-full text-left border-collapse">
-                  <thead className="sticky top-0 z-10">
-                    <tr className="bg-zinc-100/90 dark:bg-zinc-950/90 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-mono uppercase tracking-wider text-zinc-600 dark:text-zinc-400 font-bold">
-                      <th className="p-4 pl-6">Allowed Email & Student</th>
-                      {isMasterAdmin && (
-                        <th className="p-4">Authorized By</th>
-                      )}
-                      <th className="p-4">Added On (IST)</th>
-                      <th className="p-4">Status</th>
-                      <th className="p-4 text-right pr-6">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 text-sm">
-                    {filteredWhitelistEmails.length === 0 ? (
-                      <tr>
-                        <td colSpan={isMasterAdmin ? 5 : 4} className="p-12 text-center text-zinc-400 dark:text-zinc-600 font-mono text-xs">
-                          {searchQuery ? "No matching emails found." : "No emails saved yet. Add allowed student emails using the form on the left."}
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredWhitelistEmails.map((item) => (
-                        <tr key={item.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
-                          <td className="p-4 pl-6">
-                            <div className="font-bold text-zinc-900 dark:text-zinc-100 font-mono text-sm">{item.email}</div>
-                            {item.name && (
-                              <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{item.name}</div>
-                            )}
-                          </td>
-                          {isMasterAdmin && (
-                            <td className="p-4">
-                              <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                                {item.admin_name || "Master Administrator"}
-                              </div>
-                              {item.admin_email && (
-                                <div className="text-[10px] text-zinc-400 font-mono">{item.admin_email}</div>
-                              )}
-                            </td>
-                          )}
-                          <td className="p-4 text-xs text-zinc-600 dark:text-zinc-400 font-mono">
-                            {formatISTDateTime(item.created_at)}
-                          </td>
-                          <td className="p-4">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
-                              Authorized
-                            </span>
-                          </td>
-                          <td className="p-4 text-right pr-6">
-                            <button
-                              onClick={() => handleDeleteAllowedEmail(item.id, item.email)}
-                              title="Remove from allowed list"
-                              className="p-2 rounded-xl text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-          </div>
-        )}
-
         {/* TAB 3: Venue Location & Geofence GPS Access (Master Admin Only) */}
         {isMasterAdmin && activeTab === 'location' && (
           <div className="space-y-6">
@@ -2523,7 +1858,7 @@ const AdminDashboard = () => {
                     </span>
                   </div>
                   <p className="text-xs text-zinc-400 mt-1 max-w-xl">
-                    Full oversight of all registered administrators, instructors, active sessions, and student whitelist capacities across the institution.
+                    Full oversight of all registered administrators, instructors, active sessions, and enrolled student rosters across the institution.
                   </p>
                 </div>
               </div>
@@ -2608,7 +1943,7 @@ const AdminDashboard = () => {
                   <p className="text-2xl font-black font-mono text-zinc-900 dark:text-zinc-100">
                     {adminsList.reduce((acc, curr) => acc + (curr.whitelisted_students_count || 0), 0)}
                   </p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">Whitelisted Students</p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">Enrolled Students</p>
                 </div>
               </div>
             </div>
@@ -2646,7 +1981,7 @@ const AdminDashboard = () => {
                       <th className="p-4">Role & Status</th>
                       <th className="p-4">Session Status</th>
                       <th className="p-4">Conducted Sessions</th>
-                      <th className="p-4">Authorized Students</th>
+                      <th className="p-4">Enrolled Students</th>
                       <th className="p-4">Total Attendances</th>
                       <th className="p-4">Registered (IST)</th>
                       <th className="p-4 pr-6 text-right">Actions</th>
@@ -2803,28 +2138,28 @@ const AdminDashboard = () => {
             </div>
 
             <form onSubmit={handleManualFormSubmit} className="space-y-4">
-              {/* Quick Select from Roster / Whitelist */}
+              {/* Quick Select from Roster / Students */}
               <div>
                 <label className="block text-xs font-mono font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1.5">
                   Select Registered Student or Enter Email
                 </label>
                 <div className="space-y-2">
-                  {allowedEmails.length > 0 && (
+                  {enrolledStudents.length > 0 && (
                     <select
                       onChange={(e) => {
                         const val = e.target.value;
                         if (val) {
-                          const item = allowedEmails.find(x => x.email === val);
+                          const item = enrolledStudents.find(x => x.email === val);
                           setManualEmail(val);
                           if (item && item.name) setManualName(item.name);
                         }
                       }}
                       className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 text-xs font-mono outline-none focus:border-emerald-500 transition cursor-pointer"
                     >
-                      <option value="">-- Choose from Authorized Whitelist --</option>
-                      {allowedEmails.map((item) => (
-                        <option key={item.id} value={item.email}>
-                          {item.name ? `${item.name} (${item.email})` : item.email}
+                      <option value="">-- Choose from Enrolled Students --</option>
+                      {enrolledStudents.map((item) => (
+                        <option key={item.id || item.email} value={item.email}>
+                          {item.name ? `${item.name} (${item.register_number ? `${item.register_number} - ` : ''}${item.email})` : item.email}
                         </option>
                       ))}
                     </select>

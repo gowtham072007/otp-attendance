@@ -81,15 +81,15 @@ const Login = () => {
   // Student Login Submit
   const handleStudentSubmit = async (e) => {
     e.preventDefault();
-    if (!studentForm.name.trim() || !studentForm.email.trim()) {
-      setError("Please enter both Name and Email.");
+    if (!studentForm.email.trim()) {
+      setError("Please enter your registered student email.");
       return;
     }
     
     setLoading(true);
     setError(null);
     try {
-      await login(studentForm.email.trim(), studentForm.name.trim());
+      await login(studentForm.email.trim(), studentForm.name?.trim() || '');
     } catch (err) {
       setError(getErrorMessage(err, "Authentication failed. Please check your registered email or contact Admin."));
       setLoading(false);
@@ -317,34 +317,23 @@ const Login = () => {
             <form onSubmit={handleStudentSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1.5">
-                  Full Name
-                </label>
-                <div className="relative">
-                  <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-                  <input 
-                    type="text" 
-                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/60 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800 outline-none transition font-medium text-sm"
-                    placeholder="e.g. John Doe"
-                    value={studentForm.name}
-                    onChange={(e) => setStudentForm({...studentForm, name: e.target.value})}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1.5">
-                  Registered Email Address
+                  Registered Student Email
                 </label>
                 <div className="relative">
                   <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
                   <input 
                     type="email" 
+                    required
+                    autoFocus
                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/60 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:bg-white dark:focus:bg-zinc-900 focus:border-black dark:focus:border-white focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800 outline-none transition font-medium text-sm"
                     placeholder="student@francisxavier.ac.in"
                     value={studentForm.email}
                     onChange={(e) => setStudentForm({...studentForm, email: e.target.value})}
                   />
                 </div>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1.5 font-mono">
+                  Enter your registered institutional email to access today's session.
+                </p>
               </div>
 
               <button 
@@ -352,7 +341,7 @@ const Login = () => {
                 disabled={loading}
                 className="w-full mt-2 flex items-center justify-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 active:scale-[0.99] text-white py-3.5 rounded-xl font-bold font-mono uppercase tracking-wider text-xs transition shadow-md disabled:bg-zinc-300 dark:disabled:bg-zinc-800 disabled:text-zinc-500 cursor-pointer"
               >
-                <span>{loading ? 'Verifying Device...' : 'Continue to Dashboard'}</span>
+                <span>{loading ? 'Verifying Student Identity...' : 'Continue to Dashboard'}</span>
                 {!loading && <ArrowRight size={16} />}
               </button>
             </form>
