@@ -1208,8 +1208,8 @@ const AdminDashboard = () => {
 
                 
                 {/* Header & Controls */}
-                <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-50/50 dark:bg-zinc-900/50">
-                  <div>
+                <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-zinc-50/50 dark:bg-zinc-900/50">
+                  <div className="shrink-0">
                     <div className="flex items-center space-x-2">
                       <h2 className="text-base font-black uppercase tracking-wider text-black dark:text-white">Attendance Records (IST)</h2>
                       {attendanceReport.session && (
@@ -1227,13 +1227,13 @@ const AdminDashboard = () => {
                     </p>
                   </div>
 
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center flex-wrap gap-2 sm:gap-2.5">
                     {/* Session Selector Dropdown */}
                     {allSessions.length > 0 && (
                       <select
                         value={selectedSessionId || ''}
                         onChange={handleSelectSession}
-                        className="bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs rounded-xl px-3 py-2 font-mono outline-none focus:border-black dark:focus:border-white transition"
+                        className="bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs rounded-xl px-3 py-2 font-mono outline-none focus:border-black dark:focus:border-white transition whitespace-nowrap shrink-0 max-w-[200px] cursor-pointer"
                       >
                         <option value="">Latest Active Session</option>
                         {allSessions.map((s) => (
@@ -1251,7 +1251,7 @@ const AdminDashboard = () => {
                     {selectedSessionId && (
                       <button 
                         onClick={handleDeleteSelectedSession}
-                        className="flex items-center space-x-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/80 px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider"
+                        className="flex items-center space-x-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/80 px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider whitespace-nowrap shrink-0 cursor-pointer"
                         title={`Delete Session #${selectedSessionId}`}
                       >
                         <Trash2 size={14} />
@@ -1261,7 +1261,7 @@ const AdminDashboard = () => {
 
                     <button 
                       onClick={handleExport} 
-                      className="flex items-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white px-4 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider cursor-pointer"
+                      className="flex items-center space-x-2 bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-white px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider whitespace-nowrap shrink-0 cursor-pointer"
                     >
                       <Download size={14} />
                       <span>Export CSV (IST)</span>
@@ -1274,7 +1274,7 @@ const AdminDashboard = () => {
                         setManualName('');
                         setManualSessionId(selectedSessionId || (attendanceReport.session ? attendanceReport.session.id : (session ? session : null)));
                       }}
-                      className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider cursor-pointer"
+                      className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider whitespace-nowrap shrink-0 cursor-pointer"
                       title="Manually mark attendance for a student"
                     >
                       <UserCheck size={14} />
@@ -1283,7 +1283,7 @@ const AdminDashboard = () => {
 
                     <button 
                       onClick={handleResetAllDevices} 
-                      className="flex items-center space-x-1.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider cursor-pointer"
+                      className="flex items-center space-x-1.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider whitespace-nowrap shrink-0 cursor-pointer"
                       title="Reset device bindings for all students"
                     >
                       <Smartphone size={14} />
@@ -1293,7 +1293,7 @@ const AdminDashboard = () => {
                     <button 
                       onClick={handleDeleteAllAttendance}
                       disabled={deleteLoading}
-                      className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white px-4 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+                      className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white px-3.5 py-2 rounded-xl shadow-xs transition-all font-mono font-bold text-xs uppercase tracking-wider disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
                       title="Permanently delete all attendance records and sessions"
                     >
                       <Trash2 size={14} />

@@ -327,6 +327,33 @@ def update_student(
     return build_student_response(student, db)
 
 
+@router.delete("/students/all")
+def delete_all_students(
+    admin_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Delete all student records.
+    - Regular Admin: Deletes all students enrolled under their admin account.
+    - Master Admin: Deletes all student records globally across the institution (or for a specific admin if admin_id is provided).
+    """
+    if not is_master_admin(admin):
+        query = db.query(Student).filter(Student.admin_id == admin.id)
+    else:
+        query = db.query(Student)
+        if admin_id:
+            query = query.filter(Student.admin_id == admin_id)
+
+    deleted_count = query.delete(synchronize_session=False)
+    db.commit()
+
+    return {
+        "message": f"Successfully removed all {deleted_count} student record(s).",
+        "deleted_count": deleted_count
+    }
+
+
 @router.delete("/students/{student_id}")
 def delete_student(
     student_id: int,
@@ -621,18 +648,18 @@ def download_excel_template():
     ws.append(headers)
 
     ws.append([
-        "Gowthama Lakshmana Krishna A",
-        "95072517036",
-        "gowthamaa.ug.25.ad@francisxavier.ac.in",
+        "Sample Student One",
+        "95072517001",
+        "sample.student1@francisxavier.ac.in",
         "9876543210",
         "Artificial Intelligence & Data Science (AIDS)",
         "2nd Year (II)",
         "Active"
     ])
     ws.append([
-        "Alex Johnson",
-        "95072517037",
-        "alex.johnson@francisxavier.ac.in",
+        "Sample Student Two",
+        "95072517002",
+        "sample.student2@francisxavier.ac.in",
         "9876543211",
         "Computer Science & Engineering (CSE)",
         "1st Year (I)",
@@ -685,18 +712,18 @@ def download_csv_template():
         "Status"
     ])
     writer.writerow([
-        "Gowthama Lakshmana Krishna A",
-        "95072517036",
-        "gowthamaa.ug.25.ad@francisxavier.ac.in",
+        "Sample Student One",
+        "95072517001",
+        "sample.student1@francisxavier.ac.in",
         "9876543210",
         "Artificial Intelligence & Data Science (AIDS)",
         "2nd Year (II)",
         "Active"
     ])
     writer.writerow([
-        "Alex Johnson",
-        "95072517037",
-        "alex.johnson@francisxavier.ac.in",
+        "Sample Student Two",
+        "95072517002",
+        "sample.student2@francisxavier.ac.in",
         "9876543211",
         "Computer Science & Engineering (CSE)",
         "1st Year (I)",
@@ -823,6 +850,18 @@ def master_admin_update_student(
     if not is_master_admin(admin):
         raise HTTPException(status_code=403, detail="Access Denied: Only Master Administrator can perform this action.")
     return update_student(student_id=student_id, payload=payload, db=db, admin=admin)
+
+
+@router.delete("/master-admin/students/all")
+def master_admin_delete_all_students(
+    admin_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Master Admin delete all students across the entire institution."""
+    if not is_master_admin(admin):
+        raise HTTPException(status_code=403, detail="Access Denied: Only Master Administrator can perform this action.")
+    return delete_all_students(admin_id=admin_id, db=db, admin=admin)
 
 
 @router.delete("/master-admin/students/{student_id}")

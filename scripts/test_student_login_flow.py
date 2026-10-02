@@ -259,3 +259,18 @@ else:
 print("\n" + "=" * 60)
 print("ALL 6 TESTS + INTEGRITY CHECK PASSED WITH 100% SUCCESS!")
 print("=" * 60)
+
+# Final Cleanup of all test artifacts
+print("\n[CLEANUP] Cleaning up test student and admin records...")
+existing_s = db.query(Student).filter((Student.email == target_email) | (Student.register_number == target_id)).all()
+for s in existing_s:
+    db.delete(s)
+existing_u = db.query(User).filter(User.email == target_email).all()
+for u in existing_u:
+    db.query(AttendanceRecord).filter(AttendanceRecord.user_id == u.id).delete(synchronize_session=False)
+    db.delete(u)
+if 'normal_admin' in locals() and normal_admin.email == "instructor.cse@francisxavier.ac.in":
+    db.delete(normal_admin)
+db.commit()
+db.close()
+print("[CLEANUP] Completed! Database is clean.")

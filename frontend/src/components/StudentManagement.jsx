@@ -100,6 +100,10 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
     status: 'Active'
   });
 
+  // Delete All Students Modal State
+  const [deleteAllModalOpen, setDeleteAllModalOpen] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
+
   // Excel / Bulk Spreadsheet Import State
   const [excelModalOpen, setExcelModalOpen] = useState(false);
   const [excelFile, setExcelFile] = useState(null);
@@ -136,9 +140,9 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
     try {
       const ws = XLSX.utils.aoa_to_sheet([
         ['Student Name', 'Student ID / Register No', 'Email', 'Phone Number', 'Department', 'Year / Class', 'Status'],
-        ['Gowthama Lakshmana Krishna A', '95072517036', 'gowthamaa.ug.25.ad@francisxavier.ac.in', '9876543210', 'Artificial Intelligence & Data Science (AIDS)', '2nd Year (II)', 'Active'],
-        ['Alex Johnson', '95072517037', 'alex.johnson@francisxavier.ac.in', '9876543211', 'Computer Science & Engineering (CSE)', '1st Year (I)', 'Active'],
-        ['Priya Sharma', '95072517038', 'priya.sharma@francisxavier.ac.in', '9876543212', 'Information Technology (IT)', '3rd Year (III)', 'Active']
+        ['Sample Student One', '95072517001', 'sample.student1@francisxavier.ac.in', '9876543210', 'Artificial Intelligence & Data Science (AIDS)', '2nd Year (II)', 'Active'],
+        ['Sample Student Two', '95072517002', 'sample.student2@francisxavier.ac.in', '9876543211', 'Computer Science & Engineering (CSE)', '1st Year (I)', 'Active'],
+        ['Sample Student Three', '95072517003', 'sample.student3@francisxavier.ac.in', '9876543212', 'Information Technology (IT)', '3rd Year (III)', 'Active']
       ]);
       ws['!cols'] = [{ wch: 32 }, { wch: 26 }, { wch: 38 }, { wch: 18 }, { wch: 42 }, { wch: 18 }, { wch: 14 }];
       const wb = XLSX.utils.book_new();
@@ -152,9 +156,9 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
   // Download Sample CSV Template (.csv)
   const handleDownloadCSVTemplate = () => {
     const csvContent = '\ufeffStudent Name,Student ID / Register No,Email,Phone Number,Department,Year / Class,Status\n' +
-      '"Gowthama Lakshmana Krishna A","95072517036","gowthamaa.ug.25.ad@francisxavier.ac.in","9876543210","Artificial Intelligence & Data Science (AIDS)","2nd Year (II)","Active"\n' +
-      '"Alex Johnson","95072517037","alex.johnson@francisxavier.ac.in","9876543211","Computer Science & Engineering (CSE)","1st Year (I)","Active"\n' +
-      '"Priya Sharma","95072517038","priya.sharma@francisxavier.ac.in","9876543212","Information Technology (IT)","3rd Year (III)","Active"\n';
+      '"Sample Student One","95072517001","sample.student1@francisxavier.ac.in","9876543210","Artificial Intelligence & Data Science (AIDS)","2nd Year (II)","Active"\n' +
+      '"Sample Student Two","95072517002","sample.student2@francisxavier.ac.in","9876543211","Computer Science & Engineering (CSE)","1st Year (I)","Active"\n' +
+      '"Sample Student Three","95072517003","sample.student3@francisxavier.ac.in","9876543212","Information Technology (IT)","3rd Year (III)","Active"\n';
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -490,6 +494,31 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
     }
   };
 
+  // Remove all students
+  const handleRemoveAllStudents = async () => {
+    setDeletingAll(true);
+    try {
+      const endpoint = isMasterAdmin ? '/master-admin/students/all' : '/students/all';
+      const res = await api.delete(endpoint);
+      setDeleteAllModalOpen(false);
+      setSuccessMsg(res.data?.message || 'All student records have been permanently removed.');
+      setStudents([]);
+      setStats(prev => ({
+        ...prev,
+        total_students: 0,
+        active_students: 0,
+        inactive_students: 0,
+        departments_count: 0
+      }));
+      await fetchStudents(false);
+      setTimeout(() => setSuccessMsg(''), 5000);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to remove all students.');
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
   // Quick toggle status (Active <-> Inactive)
   const handleToggleStatus = async (student) => {
     const newStatus = student.status?.toLowerCase() === 'active' ? 'Inactive' : 'Active';
@@ -594,11 +623,11 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center flex-wrap gap-2.5">
+        <div className="flex items-center flex-wrap gap-2 sm:gap-2.5">
           <button
             onClick={() => fetchStudents(false)}
             disabled={refreshing}
-            className="flex items-center space-x-1.5 px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-300 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+            className="flex items-center space-x-1.5 px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-300 transition-all cursor-pointer shadow-xs disabled:opacity-50 whitespace-nowrap shrink-0"
             title="Refresh student list"
           >
             <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
@@ -607,7 +636,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
 
           <button
             onClick={handleExportCSV}
-            className="flex items-center space-x-1.5 px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-300 transition-all cursor-pointer shadow-xs"
+            className="flex items-center space-x-1.5 px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-300 transition-all cursor-pointer shadow-xs whitespace-nowrap shrink-0"
             title="Export student directory as CSV"
           >
             <Download size={14} />
@@ -615,8 +644,18 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
           </button>
 
           <button
+            onClick={() => setDeleteAllModalOpen(true)}
+            disabled={students.length === 0 || deletingAll}
+            className="flex items-center space-x-1.5 px-3.5 py-2.5 rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-xs font-bold text-rose-700 dark:text-rose-300 transition-all cursor-pointer shadow-xs disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
+            title="Permanently remove all student records"
+          >
+            <Trash2 size={14} className="text-rose-600 dark:text-rose-400" />
+            <span>REMOVE ALL STUDENTS</span>
+          </button>
+
+          <button
             onClick={handleOpenExcelModal}
-            className="flex items-center space-x-2 px-3.5 py-2.5 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 font-bold text-xs shadow-xs transition-all cursor-pointer"
+            className="flex items-center space-x-2 px-3.5 py-2.5 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 font-bold text-xs shadow-xs transition-all cursor-pointer whitespace-nowrap shrink-0"
             title="Import students in batch from Excel (.xlsx, .xls) or CSV"
           >
             <FileSpreadsheet size={15} className="text-emerald-600 dark:text-emerald-400" />
@@ -625,7 +664,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
 
           <button
             onClick={handleOpenAddModal}
-            className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+            className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all cursor-pointer whitespace-nowrap shrink-0"
           >
             <Plus size={16} />
             <span>Add Student</span>
@@ -789,7 +828,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
               <GraduationCap size={28} />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-zinc-800 dark:text-zinc-200">No Students Found</h3>
+              <h3 className="text-sm font-bold text-zinc-800 dark:text-zinc-200">No students found.</h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto mt-1">
                 {searchQuery || selectedDept !== 'ALL' || selectedYear !== 'ALL' || selectedStatus !== 'ALL'
                   ? 'No students matched your search criteria. Try resetting the filters.'
@@ -1500,6 +1539,52 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
                   </span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog: Remove All Students */}
+      {deleteAllModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-3xl border border-rose-200 dark:border-rose-900/60 shadow-2xl overflow-hidden p-6 sm:p-7 space-y-5 animate-scaleUp">
+            <div className="flex items-start space-x-4">
+              <div className="p-3 rounded-2xl bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 shrink-0 border border-rose-200 dark:border-rose-800">
+                <AlertTriangle size={24} />
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                  Remove all students?
+                </h2>
+                <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                  This will permanently remove all student records. This action cannot be undone.
+                </p>
+                {students.length > 0 && (
+                  <div className="mt-3 p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-[11px] font-mono text-zinc-600 dark:text-zinc-400">
+                    Target: <strong className="text-rose-600 dark:text-rose-400">{students.length}</strong> student record(s) will be deleted from the database.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
+              <button
+                type="button"
+                onClick={() => setDeleteAllModalOpen(false)}
+                disabled={deletingAll}
+                className="px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRemoveAllStudents}
+                disabled={deletingAll}
+                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deletingAll && <RefreshCw size={13} className="animate-spin" />}
+                <span>{deletingAll ? 'Removing...' : 'Remove All Students'}</span>
+              </button>
             </div>
           </div>
         </div>

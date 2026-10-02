@@ -120,11 +120,37 @@ def test_excel_templates_and_bulk():
         assert upload_data["added_count"] == 1
 
         # Clean up test rows
-        db.query(Student).filter(Student.register_number.in_([f"REG_{rnd}_1", f"REG_{rnd}_2", f"EXCEL_{rnd}"])).delete(synchronize_session=False)
+        from sqlalchemy import func, or_
+        db.query(Student).filter(
+            or_(
+                func.upper(Student.register_number).in_([f"REG_{rnd.upper()}_1", f"REG_{rnd.upper()}_2", f"EXCEL_{rnd.upper()}"]),
+                Student.email.in_([
+                    f"teststudent_{rnd.lower()}_1@francisxavier.ac.in",
+                    f"teststudent_{rnd.lower()}_2@francisxavier.ac.in",
+                    f"excel_{rnd.lower()}@francisxavier.ac.in"
+                ])
+            )
+        ).delete(synchronize_session=False)
         db.commit()
         print("All Excel & bulk import tests passed successfully!")
 
     finally:
+        try:
+            if 'rnd' in locals():
+                from sqlalchemy import func, or_
+                db.query(Student).filter(
+                    or_(
+                        func.upper(Student.register_number).in_([f"REG_{rnd.upper()}_1", f"REG_{rnd.upper()}_2", f"EXCEL_{rnd.upper()}"]),
+                        Student.email.in_([
+                            f"teststudent_{rnd.lower()}_1@francisxavier.ac.in",
+                            f"teststudent_{rnd.lower()}_2@francisxavier.ac.in",
+                            f"excel_{rnd.lower()}@francisxavier.ac.in"
+                        ])
+                    )
+                ).delete(synchronize_session=False)
+                db.commit()
+        except Exception:
+            pass
         db.close()
 
 if __name__ == "__main__":

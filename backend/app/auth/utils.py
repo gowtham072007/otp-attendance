@@ -7,7 +7,10 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from ..database import get_db
-from ..models import User
+try:
+    from ..models import User, Student
+except (ImportError, ValueError):
+    from app.models import User, Student
 
 SECRET_KEY = os.getenv("SECRET_KEY", "generate_a_secure_random_string_here_and_keep_it_secret")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
@@ -51,6 +54,23 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(User).filter(func.lower(User.email) == email.strip().lower()).first()
     if user is None:
         raise credentials_exception
+
+    # For student accounts, verify they exist in the Students directory and are active
+    if user.role != "ADMIN":
+        student_record = db.query(Student).filter(func.lower(Student.email) == email.strip().lower()).first()
+        if not student_record:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Student account not found. Please contact your administrator.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if (student_record.status or "").strip().lower() != "active":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Your student account is inactive. Please contact the administrator.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
     return user
 
 
