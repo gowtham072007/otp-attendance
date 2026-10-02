@@ -53,6 +53,8 @@ const COMMON_YEARS = [
   '4th Year (IV)'
 ];
 
+const COMMON_SECTIONS = ['A', 'B', 'C', 'D', 'E'];
+
 const StudentManagement = ({ isMasterAdmin, currentUser }) => {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -72,10 +74,15 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
   // Admin filter list for Master Admin
   const [adminsList, setAdminsList] = useState([]);
 
+  // Authorized classes list for regular admin
+  const [myClasses, setMyClasses] = useState([]);
+  const [loadingMyClasses, setLoadingMyClasses] = useState(false);
+
   // Search and Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('ALL');
   const [selectedYear, setSelectedYear] = useState('ALL');
+  const [selectedSection, setSelectedSection] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
   const [selectedAdminId, setSelectedAdminId] = useState('ALL');
 
@@ -97,6 +104,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
     phone: '',
     department: '',
     year: '',
+    section: 'A',
     status: 'Active'
   });
 
@@ -139,12 +147,12 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
   const handleDownloadExcelTemplate = () => {
     try {
       const ws = XLSX.utils.aoa_to_sheet([
-        ['Student Name', 'Student ID / Register No', 'Email', 'Phone Number', 'Department', 'Year / Class', 'Status'],
-        ['Sample Student One', '95072517001', 'sample.student1@francisxavier.ac.in', '9876543210', 'Artificial Intelligence & Data Science (AIDS)', '2nd Year (II)', 'Active'],
-        ['Sample Student Two', '95072517002', 'sample.student2@francisxavier.ac.in', '9876543211', 'Computer Science & Engineering (CSE)', '1st Year (I)', 'Active'],
-        ['Sample Student Three', '95072517003', 'sample.student3@francisxavier.ac.in', '9876543212', 'Information Technology (IT)', '3rd Year (III)', 'Active']
+        ['Student Name', 'Student ID / Register No', 'Email', 'Phone Number', 'Department', 'Year / Class', 'Section', 'Status'],
+        ['Sample Student One', '95072517001', 'sample.student1@francisxavier.ac.in', '9876543210', 'Artificial Intelligence & Data Science (AIDS)', '2nd Year (II)', 'A', 'Active'],
+        ['Sample Student Two', '95072517002', 'sample.student2@francisxavier.ac.in', '9876543211', 'Computer Science & Engineering (CSE)', '1st Year (I)', 'B', 'Active'],
+        ['Sample Student Three', '95072517003', 'sample.student3@francisxavier.ac.in', '9876543212', 'Information Technology (IT)', '3rd Year (III)', 'A', 'Active']
       ]);
-      ws['!cols'] = [{ wch: 32 }, { wch: 26 }, { wch: 38 }, { wch: 18 }, { wch: 42 }, { wch: 18 }, { wch: 14 }];
+      ws['!cols'] = [{ wch: 32 }, { wch: 26 }, { wch: 38 }, { wch: 18 }, { wch: 42 }, { wch: 18 }, { wch: 10 }, { wch: 14 }];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Students Template');
       XLSX.writeFile(wb, 'students_import_template.xlsx');
@@ -155,10 +163,10 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
 
   // Download Sample CSV Template (.csv)
   const handleDownloadCSVTemplate = () => {
-    const csvContent = '\ufeffStudent Name,Student ID / Register No,Email,Phone Number,Department,Year / Class,Status\n' +
-      '"Sample Student One","95072517001","sample.student1@francisxavier.ac.in","9876543210","Artificial Intelligence & Data Science (AIDS)","2nd Year (II)","Active"\n' +
-      '"Sample Student Two","95072517002","sample.student2@francisxavier.ac.in","9876543211","Computer Science & Engineering (CSE)","1st Year (I)","Active"\n' +
-      '"Sample Student Three","95072517003","sample.student3@francisxavier.ac.in","9876543212","Information Technology (IT)","3rd Year (III)","Active"\n';
+    const csvContent = '\ufeffStudent Name,Student ID / Register No,Email,Phone Number,Department,Year / Class,Section,Status\n' +
+      '"Sample Student One","95072517001","sample.student1@francisxavier.ac.in","9876543210","Artificial Intelligence & Data Science (AIDS)","2nd Year (II)","A","Active"\n' +
+      '"Sample Student Two","95072517002","sample.student2@francisxavier.ac.in","9876543211","Computer Science & Engineering (CSE)","1st Year (I)","B","Active"\n' +
+      '"Sample Student Three","95072517003","sample.student3@francisxavier.ac.in","9876543212","Information Technology (IT)","3rd Year (III)","A","Active"\n';
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -214,6 +222,8 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
           const phone = getCol(['phone', 'mobile', 'contact', 'cell']);
           const dept = getCol(['dept', 'department', 'branch', 'degree']);
           const yr = getCol(['year', 'class', 'batch', 'sem']);
+          const sec = getCol(['section', 'sec', 'secn', 'division', 'div']);
+          const cleanSection = sec ? sec.toUpperCase().trim() : 'A';
           const rawStatus = getCol(['status']);
           const status = rawStatus.toLowerCase() === 'inactive' ? 'Inactive' : 'Active';
 
@@ -246,6 +256,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
             phone: phone.trim() || '—',
             department: dept.trim() || COMMON_DEPARTMENTS[0],
             year: yr.trim() || COMMON_YEARS[0],
+            section: cleanSection,
             status,
             isValid: errors.length === 0,
             errors
@@ -280,6 +291,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
           phone: r.phone !== '—' ? r.phone : null,
           department: r.department,
           year: r.year,
+          section: r.section || 'A',
           status: r.status
         }))
       };
@@ -309,6 +321,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
         if (searchQuery.trim()) params.search = searchQuery.trim();
         if (selectedDept !== 'ALL') params.department = selectedDept;
         if (selectedYear !== 'ALL') params.year = selectedYear;
+        if (selectedSection !== 'ALL') params.section = selectedSection;
         if (selectedStatus !== 'ALL') params.status = selectedStatus;
         if (selectedAdminId !== 'ALL') params.admin_id = selectedAdminId;
 
@@ -322,6 +335,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
         if (searchQuery.trim()) params.search = searchQuery.trim();
         if (selectedDept !== 'ALL') params.department = selectedDept;
         if (selectedYear !== 'ALL') params.year = selectedYear;
+        if (selectedSection !== 'ALL') params.section = selectedSection;
         if (selectedStatus !== 'ALL') params.status = selectedStatus;
 
         const res = await api.get('/students', { params });
@@ -354,12 +368,28 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
     }
   };
 
+  // Fetch authorized classes for regular admin
+  const fetchMyClasses = async () => {
+    if (isMasterAdmin) return;
+    setLoadingMyClasses(true);
+    try {
+      const res = await api.get('/admin/my-classes');
+      setMyClasses(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch assigned classes:', err);
+    } finally {
+      setLoadingMyClasses(false);
+    }
+  };
+
   useEffect(() => {
     fetchStudents(true);
     if (isMasterAdmin) {
       fetchAdmins();
+    } else {
+      fetchMyClasses();
     }
-  }, [isMasterAdmin, selectedDept, selectedYear, selectedStatus, selectedAdminId]);
+  }, [isMasterAdmin, selectedDept, selectedYear, selectedSection, selectedStatus, selectedAdminId]);
 
   // Debounced search trigger
   useEffect(() => {
@@ -375,6 +405,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
     setSearchQuery('');
     setSelectedDept('ALL');
     setSelectedYear('ALL');
+    setSelectedSection('ALL');
     setSelectedStatus('ALL');
     setSelectedAdminId('ALL');
     setCurrentPage(1);
@@ -384,13 +415,15 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
   const handleOpenAddModal = () => {
     setIsEditing(false);
     setEditingStudentId(null);
+    const defaultClass = (!isMasterAdmin && myClasses.length > 0) ? myClasses[0] : null;
     setFormData({
       name: '',
       register_number: '',
       email: '',
       phone: '',
-      department: COMMON_DEPARTMENTS[0],
-      year: COMMON_YEARS[0],
+      department: defaultClass ? defaultClass.department : COMMON_DEPARTMENTS[0],
+      year: defaultClass ? defaultClass.year : COMMON_YEARS[0],
+      section: defaultClass ? defaultClass.section : 'A',
       status: 'Active'
     });
     setFormError('');
@@ -408,6 +441,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
       phone: student.phone && student.phone !== '—' ? student.phone : '',
       department: student.department && student.department !== '—' ? student.department : COMMON_DEPARTMENTS[0],
       year: student.year && student.year !== '—' ? student.year : COMMON_YEARS[0],
+      section: student.section || 'A',
       status: student.status || 'Active'
     });
     setFormError('');
@@ -447,6 +481,11 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
       return;
     }
 
+    if (!isMasterAdmin && myClasses.length === 0) {
+      setFormError('You cannot enroll students because your account is not linked to any class or section by the Master Admin.');
+      return;
+    }
+
     setFormSubmitting(true);
     try {
       const payload = {
@@ -456,6 +495,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
         phone: formData.phone.trim() || null,
         department: formData.department.trim() || null,
         year: formData.year.trim() || null,
+        section: (formData.section || 'A').trim().toUpperCase(),
         status: formData.status || 'Active'
       };
 
@@ -541,11 +581,11 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
     }
 
     let csv = '\ufeff'; // UTF-8 BOM
-    csv += 'S.No,Student Name,Student ID / Register No,Email,Phone Number,Department,Year / Class,Status,Added By Admin,Date Added\n';
+    csv += 'S.No,Student Name,Student ID / Register No,Email,Phone Number,Department,Year / Class,Section,Status,Added By Admin,Date Added\n';
 
     students.forEach((s, idx) => {
       const escape = (str) => `"${String(str || '—').replace(/"/g, '""')}"`;
-      csv += `${idx + 1},${escape(s.name)},${escape(s.register_number)},${escape(s.email)},${escape(s.phone)},${escape(s.department)},${escape(s.year)},${escape(s.status)},${escape(s.admin_name || 'Admin')},${escape(s.date_added || s.created_at || '—')}\n`;
+      csv += `${idx + 1},${escape(s.name)},${escape(s.register_number)},${escape(s.email)},${escape(s.phone)},${escape(s.department)},${escape(s.year)},${escape(s.section || 'A')},${escape(s.status)},${escape(s.admin_name || 'Admin')},${escape(s.date_added || s.created_at || '—')}\n`;
     });
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -672,6 +712,44 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
         </div>
       </div>
 
+      {/* Assigned Classes Banner for Regular Admin */}
+      {!isMasterAdmin && (
+        <div className="space-y-2">
+          {myClasses.length === 0 && !loading && (
+            <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/80 p-4 rounded-2xl flex items-start space-x-3 text-amber-900 dark:text-amber-200">
+              <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <p className="font-bold text-sm">No Class / Section Assigned</p>
+                <p>
+                  You are not currently linked to any class or section roster by the Master Admin.
+                  You will only be able to view and enroll students once the Master Admin links you under <strong>Admin Class Links</strong>.
+                </p>
+              </div>
+            </div>
+          )}
+          {myClasses.length > 0 && (
+            <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/80 p-3.5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-center space-x-2 text-xs flex-wrap gap-y-1">
+                <span className="font-bold text-indigo-950 dark:text-indigo-200">Your Linked Classes ({myClasses.length}):</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {myClasses.map((c, i) => (
+                    <span 
+                      key={i} 
+                      className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-900 border border-indigo-200 dark:border-indigo-800 font-mono text-[11px] font-bold text-indigo-900 dark:text-indigo-300 shadow-2xs"
+                    >
+                      {c.year} • {c.department} (Sec {c.section})
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400 shrink-0">
+                Shared roster access active
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Metric Cards Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center space-x-3.5">
@@ -770,6 +848,20 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
             </select>
           </div>
 
+          {/* Section Filter */}
+          <div className="w-full md:w-32">
+            <select
+              value={selectedSection}
+              onChange={(e) => { setSelectedSection(e.target.value); setCurrentPage(1); }}
+              className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 cursor-pointer"
+            >
+              <option value="ALL">All Sections</option>
+              {COMMON_SECTIONS.map(sec => (
+                <option key={sec} value={sec}>Section {sec}</option>
+              ))}
+            </select>
+          </div>
+
           {/* Status Filter */}
           <div className="w-full md:w-36">
             <select
@@ -802,7 +894,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
           )}
 
           {/* Reset Filters button */}
-          {(searchQuery || selectedDept !== 'ALL' || selectedYear !== 'ALL' || selectedStatus !== 'ALL' || selectedAdminId !== 'ALL') && (
+          {(searchQuery || selectedDept !== 'ALL' || selectedYear !== 'ALL' || selectedSection !== 'ALL' || selectedStatus !== 'ALL' || selectedAdminId !== 'ALL') && (
             <button
               onClick={handleResetFilters}
               className="flex items-center justify-center space-x-1 px-3 py-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-xs font-bold text-zinc-600 dark:text-zinc-400 transition-all cursor-pointer"
@@ -858,6 +950,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
                     <th className="py-3.5 px-4 font-semibold">Phone</th>
                     <th className="py-3.5 px-4 font-semibold">Department</th>
                     <th className="py-3.5 px-4 font-semibold">Year / Class</th>
+                    <th className="py-3.5 px-4 font-semibold text-center">Section</th>
                     {isMasterAdmin && (
                       <th className="py-3.5 px-4 font-semibold">Added By Admin</th>
                     )}
@@ -871,7 +964,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
                     const isActive = student.status?.toLowerCase() === 'active';
                     return (
                       <tr 
-                        key={student.id}
+                        key={student.id} 
                         className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors"
                       >
                         {/* Student Name */}
@@ -906,6 +999,13 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
                         {/* Year */}
                         <td className="py-3 px-4 text-zinc-700 dark:text-zinc-300">
                           {student.year || '—'}
+                        </td>
+
+                        {/* Section */}
+                        <td className="py-3 px-4 text-center">
+                          <span className="inline-block px-2.5 py-0.5 rounded font-mono font-bold text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700">
+                            {student.section || 'A'}
+                          </span>
                         </td>
 
                         {/* Added By Admin (Master Admin Only) */}
@@ -1122,7 +1222,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
                   />
                 </div>
 
-                {/* Status */}
+                {/* Enrollment Status */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
                     Enrollment Status
@@ -1137,6 +1237,54 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
                     <option value="Inactive">Inactive</option>
                   </select>
                 </div>
+
+                {/* Section */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                    Section
+                  </label>
+                  <select
+                    name="section"
+                    value={formData.section || 'A'}
+                    onChange={handleFormChange}
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 cursor-pointer"
+                  >
+                    {COMMON_SECTIONS.map(s => (
+                      <option key={s} value={s}>Section {s}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Quick Picker from Linked Classes for Regular Admin */}
+                {!isMasterAdmin && myClasses.length > 0 && (
+                  <div className="sm:col-span-2 p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/80">
+                    <label className="block text-xs font-bold text-indigo-950 dark:text-indigo-300 mb-1.5">
+                      Select From Your Linked Classes (Quick Fill)
+                    </label>
+                    <select
+                      onChange={(e) => {
+                        const idx = parseInt(e.target.value, 10);
+                        if (!isNaN(idx) && myClasses[idx]) {
+                          const c = myClasses[idx];
+                          setFormData(prev => ({
+                            ...prev,
+                            department: c.department,
+                            year: c.year,
+                            section: c.section
+                          }));
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-900 border border-indigo-200 dark:border-indigo-800 text-xs text-zinc-800 dark:text-zinc-200 cursor-pointer"
+                    >
+                      <option value="">-- Choose Assigned Class / Section --</option>
+                      {myClasses.map((c, idx) => (
+                        <option key={idx} value={idx}>
+                          {c.year} • {c.department} • Section {c.section}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {/* Department */}
                 <div className="sm:col-span-2 space-y-1.5">
@@ -1236,7 +1384,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
                     Need the spreadsheet template format?
                   </p>
                   <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                    Headers supported: <span className="font-mono text-[10px] bg-zinc-200/70 dark:bg-zinc-700/60 px-1 py-0.5 rounded">Student Name</span>, <span className="font-mono text-[10px] bg-zinc-200/70 dark:bg-zinc-700/60 px-1 py-0.5 rounded">Student ID / Register No</span>, <span className="font-mono text-[10px] bg-zinc-200/70 dark:bg-zinc-700/60 px-1 py-0.5 rounded">Email</span>, <span className="font-mono text-[10px] bg-zinc-200/70 dark:bg-zinc-700/60 px-1 py-0.5 rounded">Phone</span>, <span className="font-mono text-[10px] bg-zinc-200/70 dark:bg-zinc-700/60 px-1 py-0.5 rounded">Department</span>, <span className="font-mono text-[10px] bg-zinc-200/70 dark:bg-zinc-700/60 px-1 py-0.5 rounded">Year / Class</span>
+                    Headers supported: <span className="font-mono text-[10px] bg-zinc-200/70 dark:bg-zinc-700/60 px-1 py-0.5 rounded">Student Name</span>, <span className="font-mono text-[10px] bg-zinc-200/70 dark:bg-zinc-700/60 px-1 py-0.5 rounded">Student ID / Register No</span>, <span className="font-mono text-[10px] bg-zinc-200/70 dark:bg-zinc-700/60 px-1 py-0.5 rounded">Email</span>, <span className="font-mono text-[10px] bg-zinc-200/70 dark:bg-zinc-700/60 px-1 py-0.5 rounded">Phone</span>, <span className="font-mono text-[10px] bg-zinc-200/70 dark:bg-zinc-700/60 px-1 py-0.5 rounded">Department</span>, <span className="font-mono text-[10px] bg-zinc-200/70 dark:bg-zinc-700/60 px-1 py-0.5 rounded">Year / Class</span>, <span className="font-mono text-[10px] bg-zinc-200/70 dark:bg-zinc-700/60 px-1 py-0.5 rounded">Section</span>
                   </p>
                 </div>
                 <div className="flex items-center space-x-2 shrink-0">
@@ -1433,6 +1581,7 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
                             <th className="py-2 px-3">Phone</th>
                             <th className="py-2 px-3">Department</th>
                             <th className="py-2 px-3">Year</th>
+                            <th className="py-2 px-3">Section</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -1484,6 +1633,9 @@ const StudentManagement = ({ isMasterAdmin, currentUser }) => {
                                 </td>
                                 <td className="py-2 px-3 text-zinc-500 dark:text-zinc-400">
                                   {row.year}
+                                </td>
+                                <td className="py-2 px-3 font-mono font-bold text-zinc-700 dark:text-zinc-300">
+                                  {row.section || 'A'}
                                 </td>
                               </tr>
                             ))}

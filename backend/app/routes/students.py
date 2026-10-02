@@ -3,16 +3,18 @@ import re
 import io
 import csv
 import openpyxl
+import openpyxl.styles
+import openpyxl.utils
 from typing import List, Optional, Any
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, and_
 
 try:
     from ..database import get_db
-    from ..models import User, Student
+    from ..models import User, Student, AdminClassLink
     from ..schemas import (
         StudentCreate, 
         StudentUpdate, 
@@ -25,7 +27,7 @@ try:
     from ..auth.utils import get_current_admin
 except (ImportError, ValueError):
     from app.database import get_db
-    from app.models import User, Student
+    from app.models import User, Student, AdminClassLink
     from app.schemas import (
         StudentCreate, 
         StudentUpdate, 
@@ -44,6 +46,23 @@ def is_master_admin(admin: User) -> bool:
     if not admin or not admin.email:
         return False
     return admin.email.strip().lower() == INITIAL_ADMIN_EMAIL
+
+def normalize_class_key(department: Optional[str], year: Optional[str], section: Optional[str]) -> tuple[str, str, str]:
+    return (
+        (department or "").strip().lower(),
+        (year or "").strip().lower(),
+        (section or "A").strip().upper()
+    )
+
+def get_admin_authorized_classes(db: Session, admin_id: int) -> List[tuple[str, str, str]]:
+    links = db.query(AdminClassLink).filter(AdminClassLink.admin_id == admin_id).all()
+    return [normalize_class_key(l.department, l.year, l.section) for l in links]
+
+def is_admin_authorized_for_class(db: Session, admin: User, department: Optional[str], year: Optional[str], section: Optional[str]) -> bool:
+    if is_master_admin(admin):
+        return True
+    key = normalize_class_key(department, year, section)
+    return key in get_admin_authorized_classes(db, admin.id)
 
 def validate_email_format(email: str) -> str:
     cleaned = email.strip().lower()
@@ -76,6 +95,7 @@ def build_student_response(student: Student, db: Session) -> StudentResponse:
         phone=student.phone,
         department=student.department,
         year=student.year,
+        section=student.section or "A",
         status=student.status or "Active",
         admin_id=student.admin_id,
         admin_name=admin_name,
@@ -132,7 +152,15 @@ def create_student(
     clean_phone = payload.phone.strip() if payload.phone else None
     clean_dept = payload.department.strip() if payload.department else None
     clean_year = payload.year.strip() if payload.year else None
+    clean_section = (payload.section.strip().upper()) if payload.section else "A"
     clean_status = (payload.status.strip().capitalize()) if payload.status else "Active"
+
+    if not is_master_admin(admin):
+        if not is_admin_authorized_for_class(db, admin, clean_dept, clean_year, clean_section):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access Denied: You are not authorized to add students to '{clean_dept or 'Unknown'} - {clean_year or 'Unknown'} (Sec {clean_section})'. Please contact Master Administrator to link this class to your account."
+            )
 
     new_student = Student(
         name=clean_name,
@@ -141,6 +169,7 @@ def create_student(
         phone=clean_phone,
         department=clean_dept,
         year=clean_year,
+        section=clean_section,
         status=clean_status,
         admin_id=admin.id
     )
@@ -162,6 +191,7 @@ def get_students(
     search: Optional[str] = None,
     department: Optional[str] = None,
     year: Optional[str] = None,
+    section: Optional[str] = None,
     status: Optional[str] = None,
     admin_id: Optional[int] = None,
     db: Session = Depends(get_db),
@@ -169,14 +199,26 @@ def get_students(
 ):
     """
     Get all students.
-    - Regular Admin: Scoped strictly to their own registered students.
+    - Regular Admin: Scoped to all students belonging to the Admin's linked classes.
     - Master Admin: Can view all students or filter by specific admin.
     """
     query = db.query(Student)
 
-    # Scope by Admin role
+    # Scope by Admin role: Linked classes
     if not is_master_admin(admin):
-        query = query.filter(Student.admin_id == admin.id)
+        links = db.query(AdminClassLink).filter(AdminClassLink.admin_id == admin.id).all()
+        if not links:
+            return []
+        conditions = []
+        for l in links:
+            conditions.append(
+                and_(
+                    func.lower(Student.department) == l.department.strip().lower(),
+                    func.lower(Student.year) == l.year.strip().lower(),
+                    func.upper(func.coalesce(Student.section, 'A')) == (l.section or "A").strip().upper()
+                )
+            )
+        query = query.filter(or_(*conditions))
     elif admin_id:
         query = query.filter(Student.admin_id == admin_id)
 
@@ -189,7 +231,8 @@ def get_students(
                 Student.register_number.ilike(q),
                 Student.email.ilike(q),
                 Student.phone.ilike(q),
-                Student.department.ilike(q)
+                Student.department.ilike(q),
+                Student.section.ilike(q)
             )
         )
 
@@ -199,6 +242,9 @@ def get_students(
 
     if year and year.strip() and year.lower() != "all":
         query = query.filter(func.lower(Student.year) == year.strip().lower())
+
+    if section and section.strip() and section.lower() != "all":
+        query = query.filter(func.upper(func.coalesce(Student.section, 'A')) == section.strip().upper())
 
     if status and status.strip() and status.lower() != "all":
         query = query.filter(func.lower(Student.status) == status.strip().lower())
@@ -219,6 +265,7 @@ def get_students(
             phone=s.phone,
             department=s.department,
             year=s.year,
+            section=s.section or "A",
             status=s.status or "Active",
             admin_id=s.admin_id,
             admin_name=creator.full_name if creator else "Administrator",
@@ -240,7 +287,7 @@ def get_student_by_id(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found.")
 
-    if not is_master_admin(admin) and student.admin_id != admin.id:
+    if not is_master_admin(admin) and not is_admin_authorized_for_class(db, admin, student.department, student.year, student.section):
         raise HTTPException(status_code=403, detail="Access Denied: You are not authorized to view this student.")
 
     return build_student_response(student, db)
@@ -258,7 +305,7 @@ def update_student(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found.")
 
-    if not is_master_admin(admin) and student.admin_id != admin.id:
+    if not is_master_admin(admin) and not is_admin_authorized_for_class(db, admin, student.department, student.year, student.section):
         raise HTTPException(status_code=403, detail="Access Denied: You are not authorized to edit this student.")
 
     # 1. Update name
@@ -298,17 +345,29 @@ def update_student(
             raise HTTPException(status_code=400, detail=f"Email '{clean_email}' is already used by another student.")
         student.email = clean_email
 
-
-
     # 4. Optional fields
     if payload.phone is not None:
         student.phone = payload.phone.strip() if payload.phone else None
 
+    # Check if target class is being changed
+    target_dept = payload.department.strip() if payload.department is not None else student.department
+    target_year = payload.year.strip() if payload.year is not None else student.year
+    target_sec = payload.section.strip().upper() if payload.section is not None else (student.section or "A")
+
+    if not is_master_admin(admin) and not is_admin_authorized_for_class(db, admin, target_dept, target_year, target_sec):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access Denied: You are not authorized to assign students to class '{target_dept} - {target_year} (Sec {target_sec})'."
+        )
+
     if payload.department is not None:
-        student.department = payload.department.strip() if payload.department else None
+        student.department = target_dept
 
     if payload.year is not None:
-        student.year = payload.year.strip() if payload.year else None
+        student.year = target_year
+
+    if payload.section is not None:
+        student.section = target_sec
 
     if payload.status is not None:
         student.status = payload.status.strip().capitalize() if payload.status else "Active"
@@ -335,11 +394,26 @@ def delete_all_students(
 ):
     """
     Delete all student records.
-    - Regular Admin: Deletes all students enrolled under their admin account.
+    - Regular Admin: Deletes all students belonging to the Admin's linked classes.
     - Master Admin: Deletes all student records globally across the institution (or for a specific admin if admin_id is provided).
     """
     if not is_master_admin(admin):
-        query = db.query(Student).filter(Student.admin_id == admin.id)
+        links = db.query(AdminClassLink).filter(AdminClassLink.admin_id == admin.id).all()
+        if not links:
+            return {
+                "message": "No classes linked to your account. No students deleted.",
+                "deleted_count": 0
+            }
+        conditions = []
+        for l in links:
+            conditions.append(
+                and_(
+                    func.lower(Student.department) == l.department.strip().lower(),
+                    func.lower(Student.year) == l.year.strip().lower(),
+                    func.upper(func.coalesce(Student.section, 'A')) == (l.section or "A").strip().upper()
+                )
+            )
+        query = db.query(Student).filter(or_(*conditions))
     else:
         query = db.query(Student)
         if admin_id:
@@ -349,7 +423,7 @@ def delete_all_students(
     db.commit()
 
     return {
-        "message": f"Successfully removed all {deleted_count} student record(s).",
+        "message": f"Successfully removed {deleted_count} student record(s).",
         "deleted_count": deleted_count
     }
 
@@ -360,12 +434,12 @@ def delete_student(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    """Delete a student record and remove from authorization list."""
+    """Delete a student record with class-link authorization check."""
     student = db.query(Student).filter(Student.id == student_id).first()
     if not student:
         raise HTTPException(status_code=404, detail="Student not found.")
 
-    if not is_master_admin(admin) and student.admin_id != admin.id:
+    if not is_master_admin(admin) and not is_admin_authorized_for_class(db, admin, student.department, student.year, student.section):
         raise HTTPException(status_code=403, detail="Access Denied: You are not authorized to delete this student.")
 
     student_name = student.name
@@ -405,6 +479,7 @@ def map_row_dict_to_student(row_dict: dict) -> dict:
     phone = get_val(lambda k: any(x in k for x in ["phone", "mobile", "contact", "cell"]))
     department = get_val(lambda k: any(x in k for x in ["dept", "department", "branch", "degree"]))
     year = get_val(lambda k: any(x in k for x in ["year", "class", "batch", "sem", "semester"]))
+    section_val = get_val(lambda k: any(x in k for x in ["section", "sec", "secname", "division"])) or "A"
     status_val = get_val(lambda k: "status" in k)
 
     return {
@@ -414,6 +489,7 @@ def map_row_dict_to_student(row_dict: dict) -> dict:
         "phone": phone,
         "department": department,
         "year": year,
+        "section": section_val.strip().upper(),
         "status": status_val or "Active"
     }
 
@@ -437,18 +513,20 @@ def parse_excel_or_csv_file(file_bytes: bytes, filename: str) -> List[dict]:
         rows = list(reader)
         if not rows:
             return []
-        header = [str(c).strip().lower() for c in rows[0]]
+        header = [c.strip().lower() for c in rows[0]]
         for row in rows[1:]:
-            if not any(str(c).strip() for c in row):
+            if not any(c.strip() for c in row):
                 continue
             row_dict = {}
             for idx, col_name in enumerate(header):
                 if idx < len(row):
-                    row_dict[col_name] = str(row[idx]).strip()
+                    row_dict[col_name] = row[idx].strip()
             records.append(map_row_dict_to_student(row_dict))
     else:
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
         sheet = wb.active
+        if sheet is None:
+            return []
         rows = list(sheet.iter_rows(values_only=True))
         if not rows:
             return []
@@ -505,6 +583,9 @@ def process_bulk_students(
         raw_phone = str(item.get("phone") or "").strip() or None
         raw_dept = str(item.get("department") or "").strip() or None
         raw_year = str(item.get("year") or "").strip() or None
+        raw_sec = str(item.get("section") or "A").strip().upper()
+        if not raw_sec:
+            raw_sec = "A"
         raw_status = str(item.get("status") or "Active").strip().capitalize()
         if raw_status not in ("Active", "Inactive"):
             raw_status = "Active"
@@ -528,6 +609,11 @@ def process_bulk_students(
 
         if raw_email in admin_emails:
             errors.append(f"{row_desc}: Email '{raw_email}' belongs to an Administrator account.")
+            skipped_count += 1
+            continue
+
+        if not is_master_admin(admin) and not is_admin_authorized_for_class(db, admin, raw_dept, raw_year, raw_sec):
+            errors.append(f"{row_desc}: Class '{raw_dept or 'Unknown'} - {raw_year or 'Unknown'} (Sec {raw_sec})' is not linked to your admin account.")
             skipped_count += 1
             continue
 
@@ -561,6 +647,7 @@ def process_bulk_students(
             phone=raw_phone,
             department=raw_dept,
             year=raw_year,
+            section=raw_sec,
             status=raw_status,
             admin_id=admin.id,
             created_at=now_utc,
@@ -643,6 +730,7 @@ def download_excel_template():
         "Phone Number", 
         "Department", 
         "Year / Class", 
+        "Section",
         "Status"
     ]
     ws.append(headers)
@@ -654,6 +742,7 @@ def download_excel_template():
         "9876543210",
         "Artificial Intelligence & Data Science (AIDS)",
         "2nd Year (II)",
+        "A",
         "Active"
     ])
     ws.append([
@@ -663,6 +752,7 @@ def download_excel_template():
         "9876543211",
         "Computer Science & Engineering (CSE)",
         "1st Year (I)",
+        "B",
         "Active"
     ])
 
@@ -675,7 +765,7 @@ def download_excel_template():
         cell.font = header_font
         cell.alignment = openpyxl.styles.Alignment(horizontal="center", vertical="center")
 
-    col_widths = [32, 26, 36, 18, 42, 18, 14]
+    col_widths = [32, 26, 36, 18, 42, 18, 12, 14]
     for col_idx, width in enumerate(col_widths, 1):
         col_letter = openpyxl.utils.get_column_letter(col_idx)
         ws.column_dimensions[col_letter].width = width
@@ -709,6 +799,7 @@ def download_csv_template():
         "Phone Number", 
         "Department", 
         "Year / Class", 
+        "Section",
         "Status"
     ])
     writer.writerow([
@@ -718,6 +809,7 @@ def download_csv_template():
         "9876543210",
         "Artificial Intelligence & Data Science (AIDS)",
         "2nd Year (II)",
+        "A",
         "Active"
     ])
     writer.writerow([
@@ -727,6 +819,7 @@ def download_csv_template():
         "9876543211",
         "Computer Science & Engineering (CSE)",
         "1st Year (I)",
+        "B",
         "Active"
     ])
     
@@ -744,6 +837,7 @@ def get_master_admin_students(
     search: Optional[str] = None,
     department: Optional[str] = None,
     year: Optional[str] = None,
+    section: Optional[str] = None,
     status: Optional[str] = None,
     admin_id: Optional[int] = None,
     db: Session = Depends(get_db),
@@ -751,7 +845,7 @@ def get_master_admin_students(
 ):
     """
     Master Admin endpoint to view and manage all students enrolled by all Admins.
-    Returns student list, summary metrics, and distinct department/year filters.
+    Returns student list, summary metrics, and distinct department/year/section filters.
     """
     if not is_master_admin(admin):
         raise HTTPException(
@@ -764,12 +858,15 @@ def get_master_admin_students(
     active_count = db.query(Student).filter(func.lower(Student.status) == "active").count()
     inactive_count = total_count - active_count
     
-    # Distinct departments and years for filter dropdowns
+    # Distinct departments, years, and sections for filter dropdowns
     dept_rows = db.query(Student.department).filter(Student.department.isnot(None), Student.department != "").distinct().all()
     departments = sorted([d[0] for d in dept_rows if d[0]])
     
     year_rows = db.query(Student.year).filter(Student.year.isnot(None), Student.year != "").distinct().all()
     years = sorted([y[0] for y in year_rows if y[0]])
+
+    section_rows = db.query(Student.section).filter(Student.section.isnot(None), Student.section != "").distinct().all()
+    sections = sorted(list({s[0].strip().upper() for s in section_rows if s[0]} | {"A", "B", "C"}))
 
     # Count of distinct admins who enrolled students
     admin_ids_with_students = db.query(Student.admin_id).distinct().count()
@@ -788,7 +885,8 @@ def get_master_admin_students(
                 Student.register_number.ilike(q),
                 Student.email.ilike(q),
                 Student.phone.ilike(q),
-                Student.department.ilike(q)
+                Student.department.ilike(q),
+                Student.section.ilike(q)
             )
         )
 
@@ -797,6 +895,9 @@ def get_master_admin_students(
 
     if year and year.strip() and year.lower() != "all":
         query = query.filter(func.lower(Student.year) == year.strip().lower())
+
+    if section and section.strip() and section.lower() != "all":
+        query = query.filter(func.upper(func.coalesce(Student.section, 'A')) == section.strip().upper())
 
     if status and status.strip() and status.lower() != "all":
         query = query.filter(func.lower(Student.status) == status.strip().lower())
@@ -817,6 +918,7 @@ def get_master_admin_students(
             "phone": s.phone or "—",
             "department": s.department or "—",
             "year": s.year or "—",
+            "section": s.section or "A",
             "status": s.status or "Active",
             "admin_id": s.admin_id,
             "admin_name": creator.full_name if creator else "Master Administrator",
@@ -835,7 +937,8 @@ def get_master_admin_students(
             "admins_count": admin_ids_with_students
         },
         "departments": departments,
-        "years": years
+        "years": years,
+        "sections": sections
     }
 
 

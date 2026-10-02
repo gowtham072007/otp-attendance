@@ -53,6 +53,14 @@ target_email = "gowthamaa.ug.25.ad@francisxavier.ac.in"
 target_dept = "Artificial Intelligence & Data Science"
 target_year = "2nd Year"
 
+# Link normal_admin to this class
+client.post("/api/admin/class-links", json={
+    "department": target_dept,
+    "year": target_year,
+    "section": "A",
+    "admin_ids": [normal_admin.id]
+}, headers=master_headers)
+
 # Clean up existing test student records
 existing_s = db.query(Student).filter((Student.email == target_email) | (Student.register_number == target_id)).all()
 for s in existing_s:

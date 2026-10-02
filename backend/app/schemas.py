@@ -30,6 +30,7 @@ class UserResponse(UserBase):
     studentId: Optional[str] = None
     department: Optional[str] = None
     year: Optional[str] = None
+    section: Optional[str] = None
     student_status: Optional[str] = None
     
     class Config:
@@ -160,6 +161,7 @@ class StudentBase(BaseModel):
     phone: Optional[str] = None
     department: Optional[str] = None
     year: Optional[str] = None
+    section: Optional[str] = "A"
     status: Optional[str] = "Active"
 
 class StudentCreate(StudentBase):
@@ -172,6 +174,7 @@ class StudentUpdate(BaseModel):
     phone: Optional[str] = None
     department: Optional[str] = None
     year: Optional[str] = None
+    section: Optional[str] = None
     status: Optional[str] = None
 
 class StudentResponse(BaseModel):
@@ -182,6 +185,7 @@ class StudentResponse(BaseModel):
     phone: Optional[str] = None
     department: Optional[str] = None
     year: Optional[str] = None
+    section: Optional[str] = "A"
     status: str = "Active"
     admin_id: int
     admin_name: Optional[str] = None
@@ -206,6 +210,7 @@ class StudentBulkImportItem(BaseModel):
     phone: Optional[str] = None
     department: Optional[str] = None
     year: Optional[str] = None
+    section: Optional[str] = "A"
     status: Optional[str] = "Active"
 
 class StudentBulkImportRequest(BaseModel):
@@ -217,4 +222,34 @@ class StudentBulkImportResponse(BaseModel):
     skipped_count: int
     added_students: List[StudentResponse] = []
     errors: List[str] = []
+
+# --- Admin Class Link Schemas ---
+
+class AdminSummary(BaseModel):
+    id: int
+    full_name: Optional[str] = None
+    email: str
+
+class AdminClassLinkCreate(BaseModel):
+    department: str
+    year: str
+    section: str = "A"
+    admin_ids: List[int]
+
+class AdminClassLinkUpdate(BaseModel):
+    department: str
+    year: str
+    section: str = "A"
+    admin_ids: List[int]
+
+class ClassRosterGroup(BaseModel):
+    class_name: str
+    department: str
+    year: str
+    section: str
+    admin_ids: List[int]
+    linked_admins: List[AdminSummary]
+    students_count: int = 0
+    created_at: Optional[datetime] = None
+    formatted_date: Optional[str] = None
 

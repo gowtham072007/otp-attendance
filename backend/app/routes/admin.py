@@ -5,14 +5,14 @@ import io
 import uuid
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_, and_
 import os
 try:
     from ..database import get_db
-    from ..models import User, AttendanceSession, OTP, AttendanceRecord, UserDevice, GeofenceConfig, Student
+    from ..models import User, AttendanceSession, OTP, AttendanceRecord, UserDevice, GeofenceConfig, Student, AdminClassLink
     from ..schemas import (
         OTPSessionResponse, 
         OTPResponse, 
@@ -20,12 +20,16 @@ try:
         GeofenceConfigUpdate,
         ManualAttendanceRequest,
         AdminAccountSummary,
-        CreateAdminByMasterRequest
+        CreateAdminByMasterRequest,
+        AdminClassLinkCreate,
+        AdminClassLinkUpdate,
+        ClassRosterGroup,
+        AdminSummary
     )
     from ..auth.utils import get_current_admin, hash_password
 except (ImportError, ValueError):
     from app.database import get_db
-    from app.models import User, AttendanceSession, OTP, AttendanceRecord, UserDevice, GeofenceConfig, Student
+    from app.models import User, AttendanceSession, OTP, AttendanceRecord, UserDevice, GeofenceConfig, Student, AdminClassLink
     from app.schemas import (
         OTPSessionResponse, 
         OTPResponse, 
@@ -33,7 +37,11 @@ except (ImportError, ValueError):
         GeofenceConfigUpdate,
         ManualAttendanceRequest,
         AdminAccountSummary,
-        CreateAdminByMasterRequest
+        CreateAdminByMasterRequest,
+        AdminClassLinkCreate,
+        AdminClassLinkUpdate,
+        ClassRosterGroup,
+        AdminSummary
     )
     from app.auth.utils import get_current_admin, hash_password
 
@@ -102,27 +110,45 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
     master_admin_id = master_admin.id if master_admin else None
     is_requester_master = admin_id is None or (master_admin_id is not None and admin_id == master_admin_id)
 
+    admin_links = db.query(AdminClassLink).filter(AdminClassLink.admin_id == admin_id).all() if admin_id else []
+    co_teacher_ids = {admin_id} if admin_id else set()
+    if admin_links:
+        for l in admin_links:
+            shared = db.query(AdminClassLink.admin_id).filter(
+                func.lower(AdminClassLink.department) == l.department.strip().lower(),
+                func.lower(AdminClassLink.year) == l.year.strip().lower(),
+                func.upper(AdminClassLink.section) == (l.section or "A").strip().upper()
+            ).all()
+            for s in shared:
+                co_teacher_ids.add(s[0])
+
     if session_id:
         query = db.query(AttendanceSession).filter(AttendanceSession.id == session_id)
         if not is_requester_master:
-            query = query.filter((AttendanceSession.admin_id == admin_id) | (AttendanceSession.admin_id == master_admin_id))
+            query = query.filter((AttendanceSession.admin_id.in_(co_teacher_ids)) | (AttendanceSession.admin_id == master_admin_id))
         target_session = query.first()
     else:
         # Check today's session first, or active session, or most recent session
         target_session = get_today_session(db, admin_id=admin_id)
+        if not target_session and not is_requester_master:
+            for c_id in co_teacher_ids:
+                if c_id != admin_id:
+                    target_session = get_today_session(db, admin_id=c_id)
+                    if target_session:
+                        break
         if not target_session and not is_requester_master and master_admin_id:
             target_session = get_today_session(db, admin_id=master_admin_id)
 
         if not target_session:
             query = db.query(AttendanceSession).filter(AttendanceSession.status == "ACTIVE")
             if not is_requester_master:
-                query = query.filter((AttendanceSession.admin_id == admin_id) | (AttendanceSession.admin_id == master_admin_id))
+                query = query.filter((AttendanceSession.admin_id.in_(co_teacher_ids)) | (AttendanceSession.admin_id == master_admin_id))
             target_session = query.order_by(AttendanceSession.id.desc()).first()
 
         if not target_session:
             query = db.query(AttendanceSession)
             if not is_requester_master:
-                query = query.filter((AttendanceSession.admin_id == admin_id) | (AttendanceSession.admin_id == master_admin_id))
+                query = query.filter((AttendanceSession.admin_id.in_(co_teacher_ids)) | (AttendanceSession.admin_id == master_admin_id))
             target_session = query.order_by(AttendanceSession.id.desc()).first()
             
     if not target_session:
@@ -153,11 +179,6 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
     present_user_ids = {r.user_id: r for r in attendance_records}
     
     # Build student roster from registered active students:
-    # If requester is Master Admin:
-    #   - If target_session is Master Admin session: all active students across the college
-    #   - If target_session is regular admin session: students enrolled under that regular admin
-    # If requester is Regular Admin:
-    #   - ALWAYS scope roster strictly to THAT regular admin's enrolled students
     if is_requester_master:
         if master_admin_id and target_session.admin_id == master_admin_id:
             student_list = db.query(Student).filter(func.lower(Student.status) == "active").all()
@@ -167,10 +188,25 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
                 func.lower(Student.status) == "active"
             ).all()
     else:
-        student_list = db.query(Student).filter(
-            Student.admin_id == admin_id,
-            func.lower(Student.status) == "active"
-        ).all()
+        if admin_links:
+            conditions = []
+            for l in admin_links:
+                conditions.append(
+                    and_(
+                        func.lower(Student.department) == l.department.strip().lower(),
+                        func.lower(Student.year) == l.year.strip().lower(),
+                        func.upper(func.coalesce(Student.section, 'A')) == (l.section or "A").strip().upper()
+                    )
+                )
+            student_list = db.query(Student).filter(
+                or_(*conditions),
+                func.lower(Student.status) == "active"
+            ).all()
+        else:
+            student_list = db.query(Student).filter(
+                Student.admin_id == admin_id,
+                func.lower(Student.status) == "active"
+            ).all()
         
     # Also get all regular students
     regular_users = db.query(User).filter(User.role == "USER").all()
@@ -239,6 +275,7 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
         reg_number = meta.register_number if meta else None
         department = meta.department if meta else None
         year = meta.year if meta else None
+        section = meta.section if meta else "A"
         display_name = meta.name if (meta and meta.name) else student["name"]
 
         if att_record:
@@ -252,6 +289,7 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
                 "student_id": reg_number or "—",
                 "department": department or "—",
                 "year": year or "—",
+                "section": section or "A",
                 "email": student["email"],
                 "date": format_ist_date(att_record.timestamp),
                 "time": format_ist_time(att_record.timestamp),
@@ -275,6 +313,7 @@ def compute_session_attendance(db: Session, session_id: Optional[int] = None, ad
                 "student_id": reg_number or "—",
                 "department": department or "—",
                 "year": year or "—",
+                "section": section or "A",
                 "email": student["email"],
                 "date": format_ist_date(target_session.created_at),
                 "time": "—",
@@ -1030,5 +1069,298 @@ def delete_admin_by_master(
     db.delete(target_admin)
     db.commit()
     return {"message": f"Administrator '{admin_email}' removed successfully."}
+
+
+# --- Admin Class Links Endpoints (Master Admin) ---
+
+@router.get("/class-links")
+def get_class_links(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """
+    List all Admin-Class links grouped by Class (Department, Year, Section).
+    Master Admin only.
+    """
+    if not is_master_admin(admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Only Master Administrator can manage class links."
+        )
+
+    links = db.query(AdminClassLink).all()
+    all_admins = {u.id: u for u in db.query(User).filter(User.role == "ADMIN").all()}
+
+    # Group by (normalized department, normalized year, normalized section)
+    groups_map = {}
+    for l in links:
+        key = (l.department.strip(), l.year.strip(), (l.section or "A").strip().upper())
+        if key not in groups_map:
+            groups_map[key] = {
+                "department": key[0],
+                "year": key[1],
+                "section": key[2],
+                "admin_ids": [],
+                "created_at": l.created_at,
+                "earliest_link": l
+            }
+        groups_map[key]["admin_ids"].append(l.admin_id)
+        if l.created_at and (not groups_map[key]["created_at"] or l.created_at < groups_map[key]["created_at"]):
+            groups_map[key]["created_at"] = l.created_at
+
+    result = []
+    for key, data in sorted(groups_map.items(), key=lambda x: (x[0][0], x[0][1], x[0][2])):
+        linked_admins = []
+        for aid in data["admin_ids"]:
+            u = all_admins.get(aid)
+            if u:
+                linked_admins.append({
+                    "id": u.id,
+                    "full_name": u.full_name or u.email,
+                    "email": u.email
+                })
+
+        # Count active students in this class
+        st_count = db.query(Student).filter(
+            func.lower(Student.department) == data["department"].lower(),
+            func.lower(Student.year) == data["year"].lower(),
+            func.upper(func.coalesce(Student.section, 'A')) == data["section"].upper(),
+            func.lower(Student.status) == "active"
+        ).count()
+
+        created_dt = to_ist(data["created_at"])
+        fmt_date = created_dt.strftime("%d-%m-%Y") if created_dt else "—"
+
+        result.append({
+            "class_name": f"{data['year']} / {data['section']}",
+            "department": data["department"],
+            "year": data["year"],
+            "section": data["section"],
+            "admin_ids": data["admin_ids"],
+            "linked_admins": linked_admins,
+            "students_count": st_count,
+            "created_at": data["created_at"].isoformat() if data["created_at"] else None,
+            "formatted_date": fmt_date
+        })
+
+    return result
+
+
+@router.post("/class-links", status_code=status.HTTP_201_CREATED)
+def create_class_link(
+    payload: AdminClassLinkCreate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Link multiple Admins to a class / section.
+    Master Admin only.
+    """
+    if not is_master_admin(admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Only Master Administrator can create class links."
+        )
+
+    dept = payload.department.strip()
+    year = payload.year.strip()
+    sec = (payload.section or "A").strip().upper()
+
+    if not dept:
+        raise HTTPException(status_code=400, detail="Department is required.")
+    if not year:
+        raise HTTPException(status_code=400, detail="Year / Class is required.")
+    if not sec:
+        sec = "A"
+
+    if not payload.admin_ids:
+        raise HTTPException(status_code=400, detail="Please select at least one Admin to link to this class.")
+
+    # Validate admin IDs
+    valid_admins = db.query(User).filter(User.id.in_(payload.admin_ids), User.role == "ADMIN").all()
+    valid_admin_ids = {u.id for u in valid_admins}
+    if not valid_admin_ids:
+        raise HTTPException(status_code=400, detail="No valid Administrator accounts selected.")
+
+    # For each admin, ensure link exists
+    added_count = 0
+    for aid in valid_admin_ids:
+        existing = db.query(AdminClassLink).filter(
+            AdminClassLink.admin_id == aid,
+            func.lower(AdminClassLink.department) == dept.lower(),
+            func.lower(AdminClassLink.year) == year.lower(),
+            func.upper(AdminClassLink.section) == sec.upper()
+        ).first()
+        if not existing:
+            link = AdminClassLink(
+                admin_id=aid,
+                department=dept,
+                year=year,
+                section=sec,
+                created_by_id=admin.id
+            )
+            db.add(link)
+            added_count += 1
+
+    db.commit()
+    linked_admins_summary = [
+        {"id": u.id, "full_name": u.full_name or u.email, "email": u.email}
+        for u in valid_admins
+    ]
+    return {
+        "message": f"Successfully linked {len(valid_admin_ids)} admin(s) to class '{year} / {sec}' ({dept}).",
+        "department": dept,
+        "year": year,
+        "section": sec,
+        "admin_ids": list(valid_admin_ids),
+        "linked_admins": linked_admins_summary
+    }
+
+
+@router.put("/class-links")
+def update_class_link(
+    payload: AdminClassLinkUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Update linked admins for a class.
+    Adds newly checked admins, removes unchecked admins from the class.
+    Does NOT delete students!
+    Master Admin only.
+    """
+    if not is_master_admin(admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Only Master Administrator can edit class links."
+        )
+
+    dept = payload.department.strip()
+    year = payload.year.strip()
+    sec = (payload.section or "A").strip().upper()
+
+    # Existing links for this class
+    existing_links = db.query(AdminClassLink).filter(
+        func.lower(AdminClassLink.department) == dept.lower(),
+        func.lower(AdminClassLink.year) == year.lower(),
+        func.upper(AdminClassLink.section) == sec.upper()
+    ).all()
+
+    existing_admin_ids = {l.admin_id: l for l in existing_links}
+    target_admin_ids = set(payload.admin_ids)
+
+    # 1. Remove admins not in target list
+    for aid, link_obj in existing_admin_ids.items():
+        if aid not in target_admin_ids:
+            db.delete(link_obj)
+
+    # 2. Add newly selected admins
+    for aid in target_admin_ids:
+        if aid not in existing_admin_ids:
+            u = db.query(User).filter(User.id == aid, User.role == "ADMIN").first()
+            if u:
+                db.add(AdminClassLink(
+                    admin_id=aid,
+                    department=dept,
+                    year=year,
+                    section=sec,
+                    created_by_id=admin.id
+                ))
+
+    db.commit()
+    return {
+        "message": f"Class roster link for '{year} / {sec}' ({dept}) updated successfully.",
+        "department": dept,
+        "year": year,
+        "section": sec,
+        "admin_ids": list(target_admin_ids)
+    }
+
+
+@router.delete("/class-links")
+def delete_class_link(
+    department: str = Query(...),
+    year: str = Query(...),
+    section: str = Query("A"),
+    admin_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Remove an Admin from a class, or remove the entire class link.
+    IMPORTANT: This ONLY removes the link; it does NOT delete any students!
+    Master Admin only.
+    """
+    if not is_master_admin(admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Only Master Administrator can remove class links."
+        )
+
+    query = db.query(AdminClassLink).filter(
+        func.lower(AdminClassLink.department) == department.strip().lower(),
+        func.lower(AdminClassLink.year) == year.strip().lower(),
+        func.upper(AdminClassLink.section) == section.strip().upper()
+    )
+
+    if admin_id is not None:
+        query = query.filter(AdminClassLink.admin_id == admin_id)
+        deleted = query.delete(synchronize_session=False)
+        db.commit()
+        return {
+            "message": f"Admin removed from class '{year} / {section}' ({department}). Students were not affected.",
+            "deleted_count": deleted
+        }
+    else:
+        deleted = query.delete(synchronize_session=False)
+        db.commit()
+        return {
+            "message": f"Class link for '{year} / {section}' ({department}) removed. Students were not affected.",
+            "deleted_count": deleted
+        }
+
+
+@router.get("/my-classes")
+def get_my_classes(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """
+    Returns the list of classes authorized for the authenticated admin.
+    - Master Admin: Returns all configured classes.
+    - Regular Admin: Returns classes linked to this admin.
+    """
+    if is_master_admin(admin):
+        links = db.query(
+            AdminClassLink.department,
+            AdminClassLink.year,
+            AdminClassLink.section
+        ).distinct().all()
+
+        st_classes = db.query(
+            Student.department,
+            Student.year,
+            Student.section
+        ).filter(Student.department.isnot(None), Student.year.isnot(None)).distinct().all()
+
+        class_set = set()
+        for d, y, s in links:
+            if d and y:
+                class_set.add((d.strip(), y.strip(), (s or "A").strip().upper()))
+        for d, y, s in st_classes:
+            if d and y:
+                class_set.add((d.strip(), y.strip(), (s or "A").strip().upper()))
+
+        classes = sorted(list(class_set), key=lambda x: (x[0], x[1], x[2]))
+    else:
+        links = db.query(AdminClassLink).filter(AdminClassLink.admin_id == admin.id).all()
+        class_set = {(l.department.strip(), l.year.strip(), (l.section or "A").strip().upper()) for l in links}
+        classes = sorted(list(class_set), key=lambda x: (x[0], x[1], x[2]))
+
+    return [
+        {
+            "department": c[0],
+            "year": c[1],
+            "section": c[2],
+            "class_name": f"{c[1]} / {c[2]}",
+            "label": f"{c[0]} — {c[1]} (Sec {c[2]})"
+        }
+        for c in classes
+    ]
+
 
 

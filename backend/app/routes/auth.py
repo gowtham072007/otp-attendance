@@ -174,6 +174,7 @@ def to_user_response(user: User, db: Optional[Session] = None) -> UserResponse:
             resp.studentId = student.register_number
             resp.department = student.department
             resp.year = student.year
+            resp.section = student.section or "A"
             resp.student_status = student.status
     return resp
 

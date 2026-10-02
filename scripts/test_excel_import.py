@@ -18,11 +18,12 @@ client = TestClient(app)
 def test_excel_templates_and_bulk():
     db = SessionLocal()
     try:
-        # Find an admin or master admin user to authenticate with
+        # Find master admin user to authenticate with
         admin = db.query(User).filter(
-            (User.role.in_(['ADMIN', 'admin', 'master_admin'])) |
-            (User.email == 'admin@francisxavier.ac.in')
+            User.email == 'admin@francisxavier.ac.in'
         ).first()
+        if not admin:
+            admin = db.query(User).filter(User.role == 'ADMIN').first()
         if not admin:
             print("No admin user found to test with.")
             return
@@ -39,6 +40,7 @@ def test_excel_templates_and_bulk():
         # Validate that the downloaded content is indeed a readable excel workbook
         wb = openpyxl.load_workbook(io.BytesIO(res.content))
         sheet = wb.active
+        assert sheet is not None, "Active sheet not found in workbook"
         headers_row = [cell.value for cell in sheet[1]]
         print("Downloaded Excel template headers:", headers_row)
         assert "Student Name" in headers_row
@@ -102,6 +104,7 @@ def test_excel_templates_and_bulk():
         print("Testing POST /api/students/upload-excel...")
         wb_upload = openpyxl.Workbook()
         ws_upload = wb_upload.active
+        assert ws_upload is not None
         ws_upload.title = "Students"
         ws_upload.append(["Full Name", "Roll No", "Email Address", "Mobile", "Dept", "Year", "Status"])
         ws_upload.append([f"Excel Student {rnd}", f"EXCEL_{rnd}", f"excel_{rnd}@francisxavier.ac.in", "9988776655", "CSE", "4th Year (IV)", "Active"])

@@ -20,6 +20,7 @@ class User(Base):
     # Strict 1 User per Device relationship
     device = relationship("UserDevice", back_populates="user", uselist=False, cascade="all, delete-orphan")
     students = relationship("Student", back_populates="admin", cascade="all, delete-orphan")
+    class_links = relationship("AdminClassLink", back_populates="admin", foreign_keys="AdminClassLink.admin_id", cascade="all, delete-orphan")
 
 class UserDevice(Base):
     __tablename__ = "user_devices"
@@ -114,6 +115,7 @@ class Student(Base):
     phone: Any = Column(String, nullable=True)
     department: Any = Column(String, nullable=True)
     year: Any = Column(String, nullable=True)
+    section: Any = Column(String, nullable=True, default="A") # e.g. A, B, C
     status: Any = Column(String, default="Active") # Active, Inactive
     admin_id: Any = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at: Any = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -123,6 +125,25 @@ class Student(Base):
 
     __table_args__ = (
         UniqueConstraint('register_number', name='_student_register_number_uc'),
+    )
+
+
+class AdminClassLink(Base):
+    __tablename__ = "admin_class_links"
+
+    id: Any = Column(Integer, primary_key=True, index=True)
+    admin_id: Any = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    department: Any = Column(String, nullable=False, index=True)
+    year: Any = Column(String, nullable=False, index=True)
+    section: Any = Column(String, nullable=False, default="A", index=True)
+    created_by_id: Any = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Any = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    admin = relationship("User", back_populates="class_links", foreign_keys=[admin_id])
+    creator = relationship("User", foreign_keys=[created_by_id])
+
+    __table_args__ = (
+        UniqueConstraint('admin_id', 'department', 'year', 'section', name='_admin_class_section_uc'),
     )
 
 

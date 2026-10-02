@@ -10,13 +10,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 try:
     from ..database import get_db
-    from ..models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, Student
+    from ..models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, Student, AdminClassLink
     from ..schemas import AttendanceSubmission, AutoOTPRequest, AutoOTPResponse
     from ..auth.utils import get_current_user
     from ..utils.email_service import send_otp_email
 except (ImportError, ValueError):
     from app.database import get_db
-    from app.models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, Student
+    from app.models import User, AttendanceSession, OTP, AttendanceRecord, GeofenceConfig, Student, AdminClassLink
     from app.schemas import AttendanceSubmission, AutoOTPRequest, AutoOTPResponse
     from app.auth.utils import get_current_user
     from app.utils.email_service import send_otp_email
@@ -88,6 +88,18 @@ def get_active_session_for_student(db: Session, student_user: User) -> Optional[
     if student_record.admin_id:
         authorized_admin_ids.add(student_record.admin_id)
 
+    st_dept = (student_record.department or "").strip().lower()
+    st_year = (student_record.year or "").strip().lower()
+    st_sec = (student_record.section or "A").strip().upper()
+    if st_dept and st_year:
+        class_links = db.query(AdminClassLink).filter(
+            func.lower(AdminClassLink.department) == st_dept,
+            func.lower(AdminClassLink.year) == st_year,
+            func.upper(AdminClassLink.section) == st_sec
+        ).all()
+        for cl in class_links:
+            authorized_admin_ids.add(cl.admin_id)
+
     master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
     master_admin_id = master_admin.id if master_admin else None
 
@@ -123,6 +135,18 @@ def get_today_session_for_student(db: Session, student_user: User) -> Optional[A
     authorized_admin_ids = set()
     if student_record.admin_id:
         authorized_admin_ids.add(student_record.admin_id)
+
+    st_dept = (student_record.department or "").strip().lower()
+    st_year = (student_record.year or "").strip().lower()
+    st_sec = (student_record.section or "A").strip().upper()
+    if st_dept and st_year:
+        class_links = db.query(AdminClassLink).filter(
+            func.lower(AdminClassLink.department) == st_dept,
+            func.lower(AdminClassLink.year) == st_year,
+            func.upper(AdminClassLink.section) == st_sec
+        ).all()
+        for cl in class_links:
+            authorized_admin_ids.add(cl.admin_id)
 
     master_admin = db.query(User).filter(func.lower(User.email) == INITIAL_ADMIN_EMAIL, User.role == "ADMIN").first()
     master_admin_id = master_admin.id if master_admin else None

@@ -39,10 +39,12 @@ import {
   FileText,
   FileDown,
   GraduationCap,
-  X
+  X,
+  Link2
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 import StudentManagement from '../components/StudentManagement';
+import AdminClassLinks from '../components/AdminClassLinks';
 
 const parseExpiryTime = (dateStr) => {
   if (!dateStr) return 0;
@@ -97,7 +99,7 @@ const AdminDashboard = () => {
 
   // Fallback if regular admin ever attempts to view protected tabs
   useEffect(() => {
-    if (!isMasterAdmin && (activeTab === 'location' || activeTab === 'admins')) {
+    if (!isMasterAdmin && (activeTab === 'location' || activeTab === 'admins' || activeTab === 'class-links')) {
       setActiveTab('session');
     }
   }, [isMasterAdmin, activeTab]);
@@ -760,6 +762,17 @@ const AdminDashboard = () => {
                   {adminsList.length || 0}
                 </span>
               </button>
+              <button
+                onClick={() => setActiveTab('class-links')}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'class-links'
+                    ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white'
+                }`}
+              >
+                <Link2 size={14} className="text-indigo-500" />
+                <span>Admin Class Links</span>
+              </button>
             </>
           )}
         </div>
@@ -777,7 +790,7 @@ const AdminDashboard = () => {
       </nav>
 
       {/* Mobile Tab Switcher */}
-      <div className={`sm:hidden px-6 pt-4 grid ${isMasterAdmin ? 'grid-cols-4' : 'grid-cols-2'} gap-1.5`}>
+      <div className={`sm:hidden px-6 pt-4 grid ${isMasterAdmin ? 'grid-cols-5' : 'grid-cols-2'} gap-1.5`}>
         <button
           onClick={() => setActiveTab('session')}
           className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
@@ -823,6 +836,17 @@ const AdminDashboard = () => {
             >
               <Users size={13} className="text-purple-500" />
               <span>Admins</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('class-links')}
+              className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 border cursor-pointer ${
+                activeTab === 'class-links'
+                  ? 'bg-black text-white dark:bg-white dark:text-black border-transparent shadow-sm'
+                  : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
+              }`}
+            >
+              <Link2 size={13} className="text-indigo-500" />
+              <span>Links</span>
             </button>
           </>
         )}
@@ -2111,6 +2135,11 @@ const AdminDashboard = () => {
             </div>
 
           </div>
+        )}
+
+        {/* TAB 5: Admin Class Links (Master Admin Only) */}
+        {isMasterAdmin && activeTab === 'class-links' && (
+          <AdminClassLinks />
         )}
 
       </div>

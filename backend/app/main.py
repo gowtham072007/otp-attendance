@@ -1,15 +1,16 @@
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 try:
     from .database import engine, Base, SessionLocal
-    from .models import User, Student
+    from .models import User, Student, AdminClassLink
     from .routes import auth, admin, attendance, students
 except (ImportError, ValueError):
     from app.database import engine, Base, SessionLocal
-    from app.models import User, Student
+    from app.models import User, Student, AdminClassLink
     from app.routes import auth, admin, attendance, students
 
 def migrate_db():
@@ -54,6 +55,18 @@ def migrate_db():
                     conn.commit()
                 except Exception:
                     pass
+
+            # Check and add section to students
+            try:
+                conn.execute(text("ALTER TABLE students ADD COLUMN IF NOT EXISTS section VARCHAR DEFAULT 'A'"))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+            try:
+                conn.execute(text("UPDATE students SET section = 'A' WHERE section IS NULL"))
+                conn.commit()
+            except Exception:
+                conn.rollback()
 
             # Purge any legacy attendance records belonging to Admin accounts
             try:
@@ -115,11 +128,12 @@ def init_db_safely():
 
 init_db_safely()
 
-app = FastAPI(title="OTP Attendance API")
-
-@app.on_event("startup")
-def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     init_db_safely()
+    yield
+
+app = FastAPI(title="OTP Attendance API", lifespan=lifespan)
 
 # Configure CORS
 app.add_middleware(
