@@ -1,0 +1,160 @@
+/* Professional Startup / Splash Animation Styles */
+
+@keyframes logoBlinkSequence {
+  0% {
+    opacity: 0.15;
+    transform: scale(0.96);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  }
+  /* Blink 1: Fade IN (0.5s = 14.3%) */
+  14.3% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 28px rgba(16, 185, 129, 0.4), 0 0 56px rgba(16, 185, 129, 0.15);
+  }
+  /* Blink 1: Soft Glow / Highlight (0.5s to 1.0s = 28.6%) */
+  28.6% {
+    opacity: 1;
+    transform: scale(1.02);
+    box-shadow: 0 0 38px rgba(16, 185, 129, 0.55), 0 0 76px rgba(16, 185, 129, 0.22);
+  }
+  /* Blink 1: Fade OUT (1.0s to 1.4s = 40.0%) */
+  40.0% {
+    opacity: 0.12;
+    transform: scale(0.96);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  }
+  /* Blink 2: Fade IN (1.4s to 1.9s = 54.3%) */
+  54.3% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 28px rgba(16, 185, 129, 0.4), 0 0 56px rgba(16, 185, 129, 0.15);
+  }
+  /* Blink 2: Soft Glow / Highlight (1.9s to 2.4s = 68.6%) */
+  68.6% {
+    opacity: 1;
+    transform: scale(1.02);
+    box-shadow: 0 0 38px rgba(16, 185, 129, 0.55), 0 0 76px rgba(16, 185, 129, 0.22);
+  }
+  /* Blink 2: Fade OUT (2.4s to 2.8s = 80.0%) */
+  80.0% {
+    opacity: 0.12;
+    transform: scale(0.96);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  }
+  /* Final Fade IN (2.8s to 3.2s = 91.4%) */
+  91.4% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 24px rgba(16, 185, 129, 0.35);
+  }
+  /* Logo stays visible (3.2s to 3.5s = 100%) */
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.15), 0 4px 10px -2px rgba(0, 0, 0, 0.08);
+  }
+}
+
+@keyframes haloPulseSequence {
+  0% {
+    opacity: 0.1;
+    transform: scale(0.88);
+  }
+  14.3% {
+    opacity: 0.65;
+    transform: scale(1.06);
+  }
+  28.6% {
+    opacity: 0.85;
+    transform: scale(1.16);
+  }
+  40.0% {
+    opacity: 0.06;
+    transform: scale(0.88);
+  }
+  54.3% {
+    opacity: 0.65;
+    transform: scale(1.06);
+  }
+  68.6% {
+    opacity: 0.85;
+    transform: scale(1.16);
+  }
+  80.0% {
+    opacity: 0.06;
+    transform: scale(0.88);
+  }
+  91.4% {
+    opacity: 0.5;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 0.4;
+    transform: scale(1.0);
+  }
+}
+
+@keyframes progressLoader {
+  0% {
+    width: 0%;
+  }
+  18% {
+    width: 25%;
+  }
+  42% {
+    width: 50%;
+  }
+  70% {
+    width: 78%;
+  }
+  90% {
+    width: 95%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+@keyframes shimmerTrack {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+@keyframes contentFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.splash-logo-animated {
+  animation: logoBlinkSequence 3.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  will-change: opacity, transform, box-shadow;
+}
+
+.splash-halo-animated {
+  animation: haloPulseSequence 3.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  will-change: opacity, transform;
+}
+
+.splash-content-fade {
+  animation: contentFadeIn 0.7s ease-out forwards;
+}
+
+.splash-progress-bar {
+  animation: progressLoader 3.4s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+  will-change: width;
+}
+
+.splash-shimmer {
+  animation: shimmerTrack 1.5s infinite linear;
+}

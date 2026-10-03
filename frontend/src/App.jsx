@@ -5,6 +5,7 @@ import { ThemeProvider } from './hooks/useTheme';
 import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import UserDashboard from './pages/UserDashboard';
+import SplashScreen from './components/SplashScreen';
 import api from './services/api';
 
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
@@ -58,8 +59,11 @@ function AppRoutes() {
 }
 
 function App() {
+  const [showSplash, setShowSplash] = useState(true);
+
   return (
     <ThemeProvider>
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       <Router>
         <AuthProvider>
           <AppRoutes />
