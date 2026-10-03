@@ -1,115 +1,139 @@
 /* ==================================================
-   Logo-Focused Startup Animation
-   Clean, minimal, professional logo reveal with soft mint/green glow
+   Smooth Rotating Attendance Logo Startup Animation
+   Clean white/off-white background with soft mint/green glow
    ================================================== */
 
-@keyframes logoRevealAndPulse {
-  /* 0.0s: Starts small and transparent */
+/* Logo 360° Rotation Sequence */
+@keyframes logoRotateSequence {
+  /* 0.0s (0%): Logo small and transparent */
+  0% {
+    opacity: 0;
+    transform: scale(0.8) rotate(0deg);
+  }
+  /* 0.3s (10.7%): Begins smooth fade/scale in and rotation */
+  10.7% {
+    opacity: 0.35;
+    transform: scale(0.85) rotate(20deg);
+  }
+  /* 1.3s (46.4%): Completes first smooth 360° rotation at 100% scale */
+  46.4% {
+    opacity: 1;
+    transform: scale(1) rotate(360deg);
+  }
+  /* 1.6s (57.1%): Short hold - logo stays centered and upright */
+  57.1% {
+    opacity: 1;
+    transform: scale(1) rotate(360deg);
+  }
+  /* 2.4s (85.7%): Completes second gentle 360° rotation (720°) at a slower speed */
+  85.7% {
+    opacity: 1;
+    transform: scale(1) rotate(720deg);
+  }
+  /* 2.6s (92.9%): Soft glow / gentle pulse */
+  92.9% {
+    opacity: 1;
+    transform: scale(1.04) rotate(720deg);
+  }
+  /* 2.8s (100%): Returns to steady 100% scale before transition */
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(720deg);
+  }
+}
+
+/* Card Container Sequence: Fade/Scale In, Ambient Mint Glow, and Final Pulse */
+@keyframes cardContainerSequence {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+  }
+  10.7% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  /* 1.3s: Scaled to 100% with subtle soft green glow */
+  46.4% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.07), 0 0 24px rgba(16, 185, 129, 0.22);
+  }
+  /* 1.6s: Short hold */
+  57.1% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.07), 0 0 20px rgba(16, 185, 129, 0.18);
+  }
+  /* 2.4s: Second rotation completion */
+  85.7% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.07), 0 0 24px rgba(16, 185, 129, 0.22);
+  }
+  /* 2.6s: Soft glow / gentle pulse peak */
+  92.9% {
+    opacity: 1;
+    transform: scale(1.03);
+    box-shadow: 0 16px 40px -6px rgba(0, 0, 0, 0.08), 0 0 36px rgba(16, 185, 129, 0.36);
+  }
+  /* 2.8s: Settles before fade-out */
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.07), 0 0 24px rgba(16, 185, 129, 0.2);
+  }
+}
+
+/* Ambient Mint Glow Halo Expanding in Center */
+@keyframes ambientMintGlow {
   0% {
     opacity: 0;
     transform: scale(0.7);
   }
-  /* 0.3s: Starts appearing smoothly */
-  12.8% {
-    opacity: 0.65;
-    transform: scale(0.85);
+  46.4% {
+    opacity: 0.75;
+    transform: scale(1.15);
   }
-  /* 0.8s: Reaches normal 100% size with smooth ease-out */
-  34.0% {
-    opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.06), 0 0 20px rgba(16, 185, 129, 0.16);
+  57.1% {
+    opacity: 0.55;
+    transform: scale(1.05);
   }
-  /* 1.0s: Soft green glow expands */
-  42.5% {
-    opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 14px 40px -8px rgba(0, 0, 0, 0.08), 0 0 38px rgba(16, 185, 129, 0.3);
+  85.7% {
+    opacity: 0.75;
+    transform: scale(1.15);
   }
-  /* 1.2s: First gentle pulse - slightly smaller */
-  51.0% {
-    opacity: 1;
-    transform: scale(0.95);
-    box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.05), 0 0 20px rgba(16, 185, 129, 0.18);
-  }
-  /* 1.4s: Returns to normal size */
-  59.5% {
-    opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 14px 40px -8px rgba(0, 0, 0, 0.08), 0 0 36px rgba(16, 185, 129, 0.28);
-  }
-  /* 1.6s: Second gentle pulse - slightly smaller */
-  68.0% {
-    opacity: 1;
-    transform: scale(0.96);
-    box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.05), 0 0 20px rgba(16, 185, 129, 0.18);
-  }
-  /* 1.8s: Returns to normal size */
-  76.5% {
-    opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 14px 40px -8px rgba(0, 0, 0, 0.08), 0 0 32px rgba(16, 185, 129, 0.25);
-  }
-  /* 2.0s - 2.35s: Logo holds centered at 100% scale with subtle soft glow */
-  85.0% {
-    opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 14px 40px -8px rgba(0, 0, 0, 0.08), 0 0 30px rgba(16, 185, 129, 0.22);
+  92.9% {
+    opacity: 0.95;
+    transform: scale(1.25);
   }
   100% {
-    opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.07), 0 0 26px rgba(16, 185, 129, 0.2);
+    opacity: 0.7;
+    transform: scale(1.1);
   }
 }
 
-@keyframes ambientMintGlow {
-  0% {
-    opacity: 0;
-    transform: scale(0.65);
-  }
-  34.0% {
-    opacity: 0.5;
-    transform: scale(0.92);
-  }
-  42.5% {
-    opacity: 0.85;
-    transform: scale(1.15);
-  }
-  51.0% {
-    opacity: 0.55;
-    transform: scale(1.02);
-  }
-  59.5% {
-    opacity: 0.82;
-    transform: scale(1.14);
-  }
-  68.0% {
-    opacity: 0.58;
-    transform: scale(1.04);
-  }
-  76.5% {
-    opacity: 0.8;
-    transform: scale(1.12);
-  }
-  100% {
-    opacity: 0.72;
-    transform: scale(1.08);
-  }
+.logo-rotate-element {
+  animation: logoRotateSequence 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  transform-origin: center center;
+  will-change: transform, opacity;
 }
 
 .logo-splash-card {
-  animation: logoRevealAndPulse 2.35s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  animation: cardContainerSequence 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   will-change: transform, opacity, box-shadow;
 }
 
 .logo-ambient-glow {
-  animation: ambientMintGlow 2.35s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  animation: ambientMintGlow 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   will-change: transform, opacity;
 }
 
 /* Accessibility: Respect prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
+  .logo-rotate-element {
+    animation: reducedFade 0.8s ease-out forwards !important;
+  }
   .logo-splash-card {
     animation: reducedFade 0.8s ease-out forwards !important;
   }
