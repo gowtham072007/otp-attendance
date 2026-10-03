@@ -1,86 +1,49 @@
 /* ==================================================
-   Smooth Rotating Attendance Logo Startup Animation
-   Clean white/off-white background with soft mint/green glow
+   Single 3D Flip Rotation Attendance Logo Startup Animation
+   Horizontal card flip with realistic 3D perspective & mint glow
    ================================================== */
 
-/* Logo 360° Rotation Sequence */
-@keyframes logoRotateSequence {
-  /* 0.0s (0%): Logo small and transparent */
-  0% {
-    opacity: 0;
-    transform: scale(0.8) rotate(0deg);
-  }
-  /* 0.3s (10.7%): Begins smooth fade/scale in and rotation */
-  10.7% {
-    opacity: 0.35;
-    transform: scale(0.85) rotate(20deg);
-  }
-  /* 1.3s (46.4%): Completes first smooth 360° rotation at 100% scale */
-  46.4% {
-    opacity: 1;
-    transform: scale(1) rotate(360deg);
-  }
-  /* 1.6s (57.1%): Short hold - logo stays centered and upright */
-  57.1% {
-    opacity: 1;
-    transform: scale(1) rotate(360deg);
-  }
-  /* 2.4s (85.7%): Completes second gentle 360° rotation (720°) at a slower speed */
-  85.7% {
-    opacity: 1;
-    transform: scale(1) rotate(720deg);
-  }
-  /* 2.6s (92.9%): Soft glow / gentle pulse */
-  92.9% {
-    opacity: 1;
-    transform: scale(1.04) rotate(720deg);
-  }
-  /* 2.8s (100%): Returns to steady 100% scale before transition */
-  100% {
-    opacity: 1;
-    transform: scale(1) rotate(720deg);
-  }
+.logo-perspective-wrapper {
+  perspective: 1000px;
+  -webkit-perspective: 1000px;
 }
 
-/* Card Container Sequence: Fade/Scale In, Ambient Mint Glow, and Final Pulse */
-@keyframes cardContainerSequence {
+/* Single 3D Flip Sequence on Y-Axis */
+@keyframes cardFlip3D {
+  /* 0.0s (0%): Logo appears small and slightly transparent */
   0% {
-    opacity: 0;
-    transform: scale(0.8);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+    opacity: 0.3;
+    transform: perspective(1000px) scale(0.8) rotateY(180deg);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
   }
-  10.7% {
-    opacity: 0.35;
-    transform: scale(0.85);
+  /* 0.2s (9.1%): Starts the flip */
+  9.1% {
+    opacity: 0.95;
+    transform: perspective(1000px) scale(0.82) rotateY(180deg);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.05);
   }
-  /* 1.3s: Scaled to 100% with subtle soft green glow */
-  46.4% {
+  /* 1.2s (54.5%): Smoothly rotates 180° on Y-axis into front-facing position */
+  54.5% {
     opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.07), 0 0 24px rgba(16, 185, 129, 0.22);
+    transform: perspective(1000px) scale(1) rotateY(0deg);
+    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.07), 0 0 18px rgba(16, 185, 129, 0.16);
   }
-  /* 1.6s: Short hold */
-  57.1% {
+  /* 1.6s (72.7%): Settles into normal front-facing position */
+  72.7% {
     opacity: 1;
-    transform: scale(1);
+    transform: perspective(1000px) scale(1) rotateY(0deg);
     box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.07), 0 0 20px rgba(16, 185, 129, 0.18);
   }
-  /* 2.4s: Second rotation completion */
-  85.7% {
+  /* 1.9s (86.4%): Subtle mint/green glow reaches peak */
+  86.4% {
     opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.07), 0 0 24px rgba(16, 185, 129, 0.22);
+    transform: perspective(1000px) scale(1.02) rotateY(0deg);
+    box-shadow: 0 16px 42px -6px rgba(0, 0, 0, 0.08), 0 0 38px rgba(16, 185, 129, 0.35);
   }
-  /* 2.6s: Soft glow / gentle pulse peak */
-  92.9% {
-    opacity: 1;
-    transform: scale(1.03);
-    box-shadow: 0 16px 40px -6px rgba(0, 0, 0, 0.08), 0 0 36px rgba(16, 185, 129, 0.36);
-  }
-  /* 2.8s: Settles before fade-out */
+  /* 2.2s (100%): Settles cleanly before fade-out */
   100% {
     opacity: 1;
-    transform: scale(1);
+    transform: perspective(1000px) scale(1) rotateY(0deg);
     box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.07), 0 0 24px rgba(16, 185, 129, 0.2);
   }
 }
@@ -91,21 +54,21 @@
     opacity: 0;
     transform: scale(0.7);
   }
-  46.4% {
-    opacity: 0.75;
-    transform: scale(1.15);
+  9.1% {
+    opacity: 0.15;
+    transform: scale(0.8);
   }
-  57.1% {
+  54.5% {
+    opacity: 0.45;
+    transform: scale(1.0);
+  }
+  72.7% {
     opacity: 0.55;
     transform: scale(1.05);
   }
-  85.7% {
-    opacity: 0.75;
-    transform: scale(1.15);
-  }
-  92.9% {
-    opacity: 0.95;
-    transform: scale(1.25);
+  86.4% {
+    opacity: 0.9;
+    transform: scale(1.22);
   }
   100% {
     opacity: 0.7;
@@ -113,42 +76,51 @@
   }
 }
 
-.logo-rotate-element {
-  animation: logoRotateSequence 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  transform-origin: center center;
-  will-change: transform, opacity;
-}
-
-.logo-splash-card {
-  animation: cardContainerSequence 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+.logo-flip-card {
+  transform-style: preserve-3d;
+  -webkit-transform-style: preserve-3d;
+  animation: cardFlip3D 2.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   will-change: transform, opacity, box-shadow;
 }
 
+.card-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.card-front {
+  transform: rotateY(0deg);
+}
+
+.card-back {
+  transform: rotateY(180deg);
+}
+
 .logo-ambient-glow {
-  animation: ambientMintGlow 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: ambientMintGlow 2.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   will-change: transform, opacity;
 }
 
 /* Accessibility: Respect prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
-  .logo-rotate-element {
-    animation: reducedFade 0.8s ease-out forwards !important;
-  }
-  .logo-splash-card {
+  .logo-flip-card {
     animation: reducedFade 0.8s ease-out forwards !important;
   }
   .logo-ambient-glow {
     animation: reducedFade 0.8s ease-out forwards !important;
+  }
+  .card-back {
+    display: none !important;
   }
 }
 
 @keyframes reducedFade {
   0% {
     opacity: 0;
-    transform: scale(1);
+    transform: scale(1) rotateY(0deg);
   }
   100% {
     opacity: 1;
-    transform: scale(1);
+    transform: scale(1) rotateY(0deg);
   }
 }
