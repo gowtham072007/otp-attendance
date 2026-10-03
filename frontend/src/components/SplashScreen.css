@@ -1,160 +1,130 @@
-/* Professional Startup / Splash Animation Styles */
+/* ==================================================
+   Logo-Focused Startup Animation
+   Clean, minimal, professional logo reveal with soft mint/green glow
+   ================================================== */
 
-@keyframes logoBlinkSequence {
-  0% {
-    opacity: 0.15;
-    transform: scale(0.96);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-  }
-  /* Blink 1: Fade IN (0.5s = 14.3%) */
-  14.3% {
-    opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 0 28px rgba(16, 185, 129, 0.4), 0 0 56px rgba(16, 185, 129, 0.15);
-  }
-  /* Blink 1: Soft Glow / Highlight (0.5s to 1.0s = 28.6%) */
-  28.6% {
-    opacity: 1;
-    transform: scale(1.02);
-    box-shadow: 0 0 38px rgba(16, 185, 129, 0.55), 0 0 76px rgba(16, 185, 129, 0.22);
-  }
-  /* Blink 1: Fade OUT (1.0s to 1.4s = 40.0%) */
-  40.0% {
-    opacity: 0.12;
-    transform: scale(0.96);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-  }
-  /* Blink 2: Fade IN (1.4s to 1.9s = 54.3%) */
-  54.3% {
-    opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 0 28px rgba(16, 185, 129, 0.4), 0 0 56px rgba(16, 185, 129, 0.15);
-  }
-  /* Blink 2: Soft Glow / Highlight (1.9s to 2.4s = 68.6%) */
-  68.6% {
-    opacity: 1;
-    transform: scale(1.02);
-    box-shadow: 0 0 38px rgba(16, 185, 129, 0.55), 0 0 76px rgba(16, 185, 129, 0.22);
-  }
-  /* Blink 2: Fade OUT (2.4s to 2.8s = 80.0%) */
-  80.0% {
-    opacity: 0.12;
-    transform: scale(0.96);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-  }
-  /* Final Fade IN (2.8s to 3.2s = 91.4%) */
-  91.4% {
-    opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 0 24px rgba(16, 185, 129, 0.35);
-  }
-  /* Logo stays visible (3.2s to 3.5s = 100%) */
-  100% {
-    opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.15), 0 4px 10px -2px rgba(0, 0, 0, 0.08);
-  }
-}
-
-@keyframes haloPulseSequence {
-  0% {
-    opacity: 0.1;
-    transform: scale(0.88);
-  }
-  14.3% {
-    opacity: 0.65;
-    transform: scale(1.06);
-  }
-  28.6% {
-    opacity: 0.85;
-    transform: scale(1.16);
-  }
-  40.0% {
-    opacity: 0.06;
-    transform: scale(0.88);
-  }
-  54.3% {
-    opacity: 0.65;
-    transform: scale(1.06);
-  }
-  68.6% {
-    opacity: 0.85;
-    transform: scale(1.16);
-  }
-  80.0% {
-    opacity: 0.06;
-    transform: scale(0.88);
-  }
-  91.4% {
-    opacity: 0.5;
-    transform: scale(1.04);
-  }
-  100% {
-    opacity: 0.4;
-    transform: scale(1.0);
-  }
-}
-
-@keyframes progressLoader {
-  0% {
-    width: 0%;
-  }
-  18% {
-    width: 25%;
-  }
-  42% {
-    width: 50%;
-  }
-  70% {
-    width: 78%;
-  }
-  90% {
-    width: 95%;
-  }
-  100% {
-    width: 100%;
-  }
-}
-
-@keyframes shimmerTrack {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(200%);
-  }
-}
-
-@keyframes contentFadeIn {
+@keyframes logoRevealAndPulse {
+  /* 0.0s: Starts small and transparent */
   0% {
     opacity: 0;
-    transform: translateY(8px);
+    transform: scale(0.7);
+  }
+  /* 0.3s: Starts appearing smoothly */
+  12.8% {
+    opacity: 0.65;
+    transform: scale(0.85);
+  }
+  /* 0.8s: Reaches normal 100% size with smooth ease-out */
+  34.0% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.06), 0 0 20px rgba(16, 185, 129, 0.16);
+  }
+  /* 1.0s: Soft green glow expands */
+  42.5% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 14px 40px -8px rgba(0, 0, 0, 0.08), 0 0 38px rgba(16, 185, 129, 0.3);
+  }
+  /* 1.2s: First gentle pulse - slightly smaller */
+  51.0% {
+    opacity: 1;
+    transform: scale(0.95);
+    box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.05), 0 0 20px rgba(16, 185, 129, 0.18);
+  }
+  /* 1.4s: Returns to normal size */
+  59.5% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 14px 40px -8px rgba(0, 0, 0, 0.08), 0 0 36px rgba(16, 185, 129, 0.28);
+  }
+  /* 1.6s: Second gentle pulse - slightly smaller */
+  68.0% {
+    opacity: 1;
+    transform: scale(0.96);
+    box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.05), 0 0 20px rgba(16, 185, 129, 0.18);
+  }
+  /* 1.8s: Returns to normal size */
+  76.5% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 14px 40px -8px rgba(0, 0, 0, 0.08), 0 0 32px rgba(16, 185, 129, 0.25);
+  }
+  /* 2.0s - 2.35s: Logo holds centered at 100% scale with subtle soft glow */
+  85.0% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 14px 40px -8px rgba(0, 0, 0, 0.08), 0 0 30px rgba(16, 185, 129, 0.22);
   }
   100% {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1);
+    box-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.07), 0 0 26px rgba(16, 185, 129, 0.2);
   }
 }
 
-.splash-logo-animated {
-  animation: logoBlinkSequence 3.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  will-change: opacity, transform, box-shadow;
+@keyframes ambientMintGlow {
+  0% {
+    opacity: 0;
+    transform: scale(0.65);
+  }
+  34.0% {
+    opacity: 0.5;
+    transform: scale(0.92);
+  }
+  42.5% {
+    opacity: 0.85;
+    transform: scale(1.15);
+  }
+  51.0% {
+    opacity: 0.55;
+    transform: scale(1.02);
+  }
+  59.5% {
+    opacity: 0.82;
+    transform: scale(1.14);
+  }
+  68.0% {
+    opacity: 0.58;
+    transform: scale(1.04);
+  }
+  76.5% {
+    opacity: 0.8;
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 0.72;
+    transform: scale(1.08);
+  }
 }
 
-.splash-halo-animated {
-  animation: haloPulseSequence 3.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  will-change: opacity, transform;
+.logo-splash-card {
+  animation: logoRevealAndPulse 2.35s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  will-change: transform, opacity, box-shadow;
 }
 
-.splash-content-fade {
-  animation: contentFadeIn 0.7s ease-out forwards;
+.logo-ambient-glow {
+  animation: ambientMintGlow 2.35s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  will-change: transform, opacity;
 }
 
-.splash-progress-bar {
-  animation: progressLoader 3.4s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
-  will-change: width;
+/* Accessibility: Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .logo-splash-card {
+    animation: reducedFade 0.8s ease-out forwards !important;
+  }
+  .logo-ambient-glow {
+    animation: reducedFade 0.8s ease-out forwards !important;
+  }
 }
 
-.splash-shimmer {
-  animation: shimmerTrack 1.5s infinite linear;
+@keyframes reducedFade {
+  0% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
